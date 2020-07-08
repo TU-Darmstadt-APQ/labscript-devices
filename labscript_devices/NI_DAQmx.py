@@ -241,7 +241,7 @@ from blacs.tab_base_classes import MODE_MANUAL, MODE_TRANSITION_TO_BUFFERED, MOD
 from blacs.device_base_class import DeviceTab
 
 @BLACS_tab
-class NI__DAQmxTab(DeviceTab):
+class NI_DAQmxTab(DeviceTab):
     def __init__(self, *args, **kwargs):
         self.combi_btns = []
         self.exp_config = LabConfig()
