@@ -10,12 +10,12 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-try:
-    from labscript_utils import check_version
-except ImportError:
-    raise ImportError('Require labscript_utils > 2.1.0')
+# try:
+#     from labscript_utils import check_version
+# except ImportError:
+#     raise ImportError('Require labscript_utils > 2.1.0')
 
-check_version('labscript', '2.0.1', '3')
+# check_version('labscript', '2.0.1', '3')
 
 from labscript_devices.Camera import *
 from labscript import set_passed_properties
