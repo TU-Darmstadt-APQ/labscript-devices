@@ -5,9 +5,9 @@ class GPIBWorker(Worker):
 
     def init(self):
         global visa
-        import visa  # the NI-GPIB library
-        global pyvisa
-        import pyvisa
+        # import visa  # the NI-GPIB library
+        # global pyvisa
+        import pyvisa as visa
         global h5py
         import labscript_utils.h5_lock
         import h5py
