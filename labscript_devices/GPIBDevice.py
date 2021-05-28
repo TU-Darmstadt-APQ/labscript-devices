@@ -4,6 +4,7 @@ from blacs.tab_base_classes import Worker
 class GPIBWorker(Worker):
 
     def init(self):
+        # Do not use visa anymore, as it is depricated (April 2021;LP)
         global visa
         # import visa  # the NI-GPIB library
         # global pyvisa
