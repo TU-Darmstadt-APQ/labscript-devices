@@ -8,7 +8,7 @@ import h5py
 
 # Specifications for HP6626A:
 max_no_of_outputs = 4
-Watt_ratings = [25,25,50,50]
+Watt_ratings = [25, 25, 50, 50]
 voltage_decimals = 3
 current_decimals = 4
 
@@ -78,7 +78,6 @@ class HP_6626A(IntermediateDevice):
         else:
             raise TypeError()
 
-
     # def add_device(self, output):
     #     # This device has 2 valid connection-ports: "freqeuncy" and "range"
     #     # range may be disabled
@@ -100,10 +99,10 @@ class HP_6626A(IntermediateDevice):
         # output_voltage = {}
         # output_current = {}
 
-        dtypes = [('v%d'%(i+1),np.float32) for i in range(4)] + \
-                 [('c%d'%(i+1),np.float32) for i in range(4)]
+        dtypes = [('v%d' % (i + 1), np.float32) for i in range(4)] + \
+                 [('c%d' % (i + 1), np.float32) for i in range(4)]
         # print('dtypes',dtypes)
-        output_table = np.zeros(1,dtype=dtypes)
+        output_table = np.zeros(1, dtype=dtypes)
         # print('output_table',output_table)
 
         # iterate through the connected child devices
@@ -112,8 +111,8 @@ class HP_6626A(IntermediateDevice):
 
         for device in self.child_devices:
             try:
-                channel_no, output_type = device.connection.replace('out','').split('/')
-                output_table['%s%d'%(output_type[0], int(channel_no))] = device.static_value
+                channel_no, output_type = device.connection.replace('out', '').split('/')
+                output_table['%s%d' % (output_type[0], int(channel_no))] = device.static_value
             except (ValueError, IndexError):
                 msg = """Connection string %s does not match format 'out<N>/voltage' or 'out<N>/current' for integer N"""
                 raise ValueError(msg % str(device.connection))
@@ -121,23 +120,22 @@ class HP_6626A(IntermediateDevice):
         # Check for device-specific limits
         for i in range(2):
             i += 1
-            if output_table['v%d'%i] < MIN_VOLTAGE_25W_HIGH_RANGE or output_table['v%d'%i] > MAX_VOLTAGE_25W_HIGH_RANGE:
+            if output_table['v%d' % i] < MIN_VOLTAGE_25W_HIGH_RANGE or output_table['v%d' % i] > MAX_VOLTAGE_25W_HIGH_RANGE:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
         for i in range(2):
             i += 1
-            if output_table['c%d'%i] < MIN_CURRENT_25W_HIGH_RANGE or output_table['c%d'%i] > MAX_CURRENT_25W_HIGH_RANGE:
+            if output_table['c%d' % i] < MIN_CURRENT_25W_HIGH_RANGE or output_table['c%d' % i] > MAX_CURRENT_25W_HIGH_RANGE:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
-        for i in range(2,4):
+        for i in range(2, 4):
             i += 1
-            if output_table['v%d'%i] < MIN_VOLTAGE_50W_HIGH_RANGE or output_table['v%d'%i] > MAX_VOLTAGE_50W_HIGH_RANGE:
+            if output_table['v%d' % i] < MIN_VOLTAGE_50W_HIGH_RANGE or output_table['v%d' % i] > MAX_VOLTAGE_50W_HIGH_RANGE:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
-        for i in range(2,4):
+        for i in range(2, 4):
             i += 1
-            if output_table['c%d'%i] < MIN_CURRENT_50W_HIGH_RANGE or output_table['c%d'%i] > MAX_CURRENT_50W_HIGH_RANGE:
+            if output_table['c%d' % i] < MIN_CURRENT_50W_HIGH_RANGE or output_table['c%d' % i] > MAX_CURRENT_50W_HIGH_RANGE:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
 
         # print('output_table',output_table)
-
 
         # Create device group in the HDF5 file:
         grp = self.init_device_group(hdf5_file)
@@ -164,15 +162,15 @@ class HP_6626ATab(DeviceTab):
         # Pull the following information out of the connection table:
         connection_table = self.settings['connection_table']
         connection_table_properties = connection_table.find_by_name(self.device_name).properties
-        self.num_outputs = 4 #connection_table_properties['num_outputs']
+        self.num_outputs = 4  # connection_table_properties['num_outputs']
 
         layout = self.get_tab_layout()
 
         # Capabilities:
 
-        self.base_units = {'v':'V'  , 'c':'A'}
-        self.base_step = {'v':0.1  , 'c':0.01}  # step size for +/- buttons
-        self.base_decimals = {'v':voltage_decimals  , 'c':current_decimals}  # display 2 decimals accuracy
+        self.base_units = {'v': 'V', 'c': 'A'}
+        self.base_step = {'v': 0.1, 'c': 0.01}  # step size for +/- buttons
+        self.base_decimals = {'v': voltage_decimals, 'c': current_decimals}  # display 2 decimals accuracy
 
         analog_properties = {}
         for i in range(2):
@@ -188,7 +186,7 @@ class HP_6626ATab(DeviceTab):
                                                             'step': self.base_step['c'],
                                                             'decimals': self.base_decimals['c']
                                                             }
-        for i in range(2,4):
+        for i in range(2, 4):
             analog_properties['out%d/voltage' % (i + 1)] = {'base_unit': self.base_units['v'],
                                                             'min': MIN_VOLTAGE_50W_HIGH_RANGE,
                                                             'max': MAX_VOLTAGE_50W_HIGH_RANGE,
@@ -271,29 +269,27 @@ class HP_6626AWorker(GPIBWorker):
 
     # TODO: check for remote values and warn if control_mode is changing
     def check_channel_control(self, channel):
-        set_value_voltage = np.round(np.float(self.GPIB_connection.query('VSET?'+str(channel))), voltage_decimals)
-        set_value_current = np.round(np.float(self.GPIB_connection.query('ISET?'+str(channel))), current_decimals)
-        out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?'+str(channel))), voltage_decimals)
-        out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?'+str(channel))), current_decimals)
+        set_value_voltage = np.round(np.float(self.GPIB_connection.query('VSET?' + str(channel))), voltage_decimals)
+        set_value_current = np.round(np.float(self.GPIB_connection.query('ISET?' + str(channel))), current_decimals)
+        out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?' + str(channel))), voltage_decimals)
+        out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?' + str(channel))), current_decimals)
 
         if out_value_current >= set_value_current:
-            print('Channel %d is in Current Control mode, Out: %.4f, Set: %.4f'%(channel, out_value_current, set_value_current))
+            print('Channel %d is in Current Control mode, Out: %.4f, Set: %.4f' % (channel, out_value_current, set_value_current))
         elif out_value_voltage >= set_value_voltage:
-            print("Channel %d is in Voltage Control mode, Out: %.4f, Set: %.4f"%(channel, out_value_voltage, set_value_voltage))
+            print("Channel %d is in Voltage Control mode, Out: %.4f, Set: %.4f" % (channel, out_value_voltage, set_value_voltage))
         else:
-            print('Output Control Mode is unclear.',out_value_current, set_value_current, out_value_voltage, set_value_voltage)
+            print('Output Control Mode is unclear.', out_value_current, set_value_current, out_value_voltage, set_value_voltage)
 
     def check_remote_values(self):
         for i in range(self.num_outputs):
-            self.check_channel_control(i+1)
-
+            self.check_channel_control(i + 1)
 
     def program_manual(self, front_panel_values):
         # Get values from the front_panel_settings
         for i in range(self.num_outputs):
             voltage = front_panel_values['out' + str(i + 1) + '/voltage']
             self.send_GPIB_voltage(voltage=voltage, output=i + 1)
-
 
         for i in range(self.num_outputs):
             current = front_panel_values['out' + str(i + 1) + '/current']
@@ -307,13 +303,13 @@ class HP_6626AWorker(GPIBWorker):
             h5_filepath = path_to_local(h5_filepath)
 
         # Get values at first from 'initial_values' and overwrite them afterwards with values given in the experiment script
-        dtypes = [('v%d'%(i+1),np.float32) for i in range(4)] + \
-                 [('c%d'%(i+1),np.float32) for i in range(4)]
+        dtypes = [('v%d' % (i + 1), np.float32) for i in range(4)] + \
+                 [('c%d' % (i + 1), np.float32) for i in range(4)]
         # print('dtypes',dtypes)
-        output_table = np.zeros(1,dtype=dtypes)
+        output_table = np.zeros(1, dtype=dtypes)
         for i in range(self.num_outputs):
-            output_table['v%d'%(i+1)] = initial_values['out' + str(i + 1) + '/voltage']
-            output_table['c%d'%(i+1)] = initial_values['out' + str(i + 1) + '/current']
+            output_table['v%d' % (i + 1)] = initial_values['out' + str(i + 1) + '/voltage']
+            output_table['c%d' % (i + 1)] = initial_values['out' + str(i + 1) + '/current']
 
         # Get values from experiment script
         with h5py.File(h5_filepath, 'r') as hdf5_file:
@@ -323,15 +319,15 @@ class HP_6626AWorker(GPIBWorker):
         # Send Values via GPIB:
         final_values = {}
         for i in range(self.num_outputs):
-            self.send_GPIB_voltage(voltage=output_table['v%d'%(i+1)], output=i + 1)
-            final_values['out' + str(i + 1) + '/voltage'] = output_table['v%d'%(i+1)]
-            self.send_GPIB_current(current=output_table['c%d'%(i+1)], output=i + 1)
-            final_values['out' + str(i + 1) + '/current'] = output_table['c%d'%(i+1)]
+            self.send_GPIB_voltage(voltage=output_table['v%d' % (i + 1)], output=i + 1)
+            final_values['out' + str(i + 1) + '/voltage'] = output_table['v%d' % (i + 1)]
+            self.send_GPIB_current(current=output_table['c%d' % (i + 1)], output=i + 1)
+            final_values['out' + str(i + 1) + '/current'] = output_table['c%d' % (i + 1)]
         # Return final values to use them when transitioning to manual:
-        self.final_values=final_values
+        self.final_values = final_values
         return self.final_values
 
-    def transition_to_manual(self,abort = False):
+    def transition_to_manual(self, abort=False):
         # Set all channels to their final values:
         values = self.final_values
 
