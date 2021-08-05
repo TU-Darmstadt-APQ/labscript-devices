@@ -236,11 +236,11 @@ class HP_6632BWorker(GPIBWorker):
         # Get values from the front_panel_settings
         for i in range(self.num_outputs):
             voltage = front_panel_values['out/voltage']
-            self.send_GPIB_voltage(voltage=voltage, output=i + 1)
+            self.send_GPIB_voltage(voltage=voltage)
 
         for i in range(self.num_outputs):
             current = front_panel_values['out/current']
-            self.send_GPIB_current(current=current, output=i + 1)
+            self.send_GPIB_current(current=current)
         self.check_remote_values()
         return {}  # no need to adjust the values. Can add a check_remote_values() here to read current values from power supply
 
