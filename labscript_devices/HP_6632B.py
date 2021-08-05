@@ -201,7 +201,7 @@ class HP_6632BWorker(GPIBWorker):
                 raise Exception("Voltage {:f} is out of range {:f} to {:f}. Is the voltage in V?".format(voltage, MIN_VOLTAGE, MAX_VOLTAGE))
 
         if voltage is not None and output is not None:
-            sendStr = "VOLT"
+            sendStr = "VOLT "
             # sendStr += str(output)
             # sendStr += ","
             sendStr += str(voltage)
@@ -218,7 +218,7 @@ class HP_6632BWorker(GPIBWorker):
                 raise Exception("Current {:f} is out of range {:f} to {:f}. Is the Current in A?".format(current, MIN_CURRENT, MAX_CURRENT))
 
         if current is not None and output is not None:
-            sendStr = "CURR"
+            sendStr = "CURR "
             # sendStr += str(output)
             # sendStr += ","
             sendStr += str(current)
