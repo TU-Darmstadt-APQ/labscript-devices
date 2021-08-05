@@ -202,8 +202,8 @@ class HP_6632BWorker(GPIBWorker):
 
         if voltage is not None and output is not None:
             sendStr = "VSET"
-            sendStr += str(output)
-            sendStr += ","
+            # sendStr += str(output)
+            # sendStr += ","
             sendStr += str(voltage)
             self.GPIB_connection.write(sendStr)
             # print('send', sendStr)
@@ -219,18 +219,18 @@ class HP_6632BWorker(GPIBWorker):
 
         if current is not None and output is not None:
             sendStr = "ISET"
-            sendStr += str(output)
-            sendStr += ","
+            # sendStr += str(output)
+            # sendStr += ","
             sendStr += str(current)
             self.GPIB_connection.write(sendStr)
             # print('send', sendStr)
 
     # TODO: check for remote values and warn if control_mode is changing
     def check_channel_control(self, channel):
-        set_value_voltage = np.round(np.float(self.GPIB_connection.query('VSET?' + str(channel))), voltage_decimals)
-        set_value_current = np.round(np.float(self.GPIB_connection.query('ISET?' + str(channel))), current_decimals)
-        out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?' + str(channel))), voltage_decimals)
-        out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?' + str(channel))), current_decimals)
+        set_value_voltage = np.round(np.float(self.GPIB_connection.query('VSET?')), voltage_decimals)
+        set_value_current = np.round(np.float(self.GPIB_connection.query('ISET?')), current_decimals)
+        out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?')), voltage_decimals)
+        out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?')), current_decimals)
 
         if out_value_current >= set_value_current:
             print('Channel %d is in Current Control mode, Out: %.4f, Set: %.4f' % (channel, out_value_current, set_value_current))
