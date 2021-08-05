@@ -78,8 +78,8 @@ class HP_6632B(IntermediateDevice):
         # output_voltage = {}
         # output_current = {}
 
-        dtypes = [('v%d' % (i + 1), np.float32) for i in range(4)] + \
-                 [('c%d' % (i + 1), np.float32) for i in range(4)]
+        dtypes = [('v', np.float32)] + \
+                 [('c', np.float32)]
         # print('dtypes',dtypes)
         output_table = np.zeros(1, dtype=dtypes)
         # print('output_table',output_table)
@@ -90,8 +90,8 @@ class HP_6632B(IntermediateDevice):
 
         for device in self.child_devices:
             try:
-                channel_no, output_type = device.connection.replace('out', '').split('/')
-                output_table['%s%d' % (output_type[0], int(channel_no))] = device.static_value
+                output_type = device.connection.replace('out/', '')
+                output_table['%s' % (output_type[0])] = device.static_value
             except (ValueError, IndexError):
                 msg = """Connection string %s does not match format 'out<N>/voltage' or 'out<N>/current' for integer N"""
                 raise ValueError(msg % str(device.connection))
@@ -99,11 +99,11 @@ class HP_6632B(IntermediateDevice):
         # Check for device-specific limits
         for i in range(2):
             i += 1
-            if output_table['v%d' % i] < MIN_VOLTAGE or output_table['v%d' % i] > MAX_VOLTAGE:
+            if output_table['v'] < MIN_VOLTAGE or output_table['v'] > MAX_VOLTAGE:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
         for i in range(2):
             i += 1
-            if output_table['c%d' % i] < MIN_CURRENT or output_table['c%d' % i] > MAX_CURRENT:
+            if output_table['c'] < MIN_CURRENT or output_table['c'] > MAX_CURRENT:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
 
         # print('output_table',output_table)
