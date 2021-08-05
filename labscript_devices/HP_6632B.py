@@ -227,17 +227,10 @@ class HP_6632BWorker(GPIBWorker):
 
     # TODO: check for remote values and warn if control_mode is changing
     def check_channel_control(self, channel):
-        set_value_voltage = np.round(np.float(self.GPIB_connection.query('VSET?')), voltage_decimals)
-        set_value_current = np.round(np.float(self.GPIB_connection.query('ISET?')), current_decimals)
         out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?')), voltage_decimals)
         out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?')), current_decimals)
 
-        if out_value_current >= set_value_current:
-            print('Channel %d is in Current Control mode, Out: %.4f, Set: %.4f' % (channel, out_value_current, set_value_current))
-        elif out_value_voltage >= set_value_voltage:
-            print("Channel %d is in Voltage Control mode, Out: %.4f, Set: %.4f" % (channel, out_value_voltage, set_value_voltage))
-        else:
-            print('Output Control Mode is unclear.', out_value_current, set_value_current, out_value_voltage, set_value_voltage)
+        print('Output voltage is {}; output current is {}'.format(out_value_voltage, out_value_current))
 
     def check_remote_values(self):
         for i in range(self.num_outputs):
