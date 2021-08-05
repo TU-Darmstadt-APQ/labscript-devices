@@ -201,7 +201,7 @@ class HP_6632BWorker(GPIBWorker):
                 raise Exception("Voltage {:f} is out of range {:f} to {:f}. Is the voltage in V?".format(voltage, MIN_VOLTAGE, MAX_VOLTAGE))
 
         if voltage is not None and output is not None:
-            sendStr = "VSET"
+            sendStr = "VOLT"
             # sendStr += str(output)
             # sendStr += ","
             sendStr += str(voltage)
@@ -218,7 +218,7 @@ class HP_6632BWorker(GPIBWorker):
                 raise Exception("Current {:f} is out of range {:f} to {:f}. Is the Current in A?".format(current, MIN_CURRENT, MAX_CURRENT))
 
         if current is not None and output is not None:
-            sendStr = "ISET"
+            sendStr = "CURR"
             # sendStr += str(output)
             # sendStr += ","
             sendStr += str(current)
@@ -227,10 +227,11 @@ class HP_6632BWorker(GPIBWorker):
 
     # TODO: check for remote values and warn if control_mode is changing
     def check_channel_control(self, channel):
-        out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?')), voltage_decimals)
-        out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?')), current_decimals)
+        return
+        # out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?')), voltage_decimals)
+        # out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?')), current_decimals)
 
-        print('Output voltage is {}; output current is {}'.format(out_value_voltage, out_value_current))
+        # print('Output voltage is {}; output current is {}'.format(out_value_voltage, out_value_current))
 
     def check_remote_values(self):
         for i in range(self.num_outputs):
