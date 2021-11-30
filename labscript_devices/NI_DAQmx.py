@@ -502,6 +502,7 @@ class Ni_DAQmxWorker(Worker):
         # Store the initial values in case we have to abort and restore them:
         self.initial_values = initial_values
 
+        start_time_test = time.time_ns()
         with h5py.File(h5file,'r') as hdf5_file:
             group = hdf5_file['devices/'][device_name]
             device_properties = labscript_utils.properties.get(hdf5_file, device_name, 'device_properties')
@@ -629,6 +630,9 @@ class Ni_DAQmxWorker(Worker):
                     # we should probabaly still stop the task (this makes it easier to setup the task later)
                     self.ao_task.StopTask()
                     self.ao_task.ClearTask()
+
+        end_time_test = time.time_ns()
+        print(f"transition to buffered on NI Card {device_name} took {(end_time_test - start_time_test)*1e-6:.1f}ms")
 
         return final_values
 
@@ -898,6 +902,8 @@ class Ni_DAQmxAcquisitionWorker(Worker):
         # TODO: Do this line better!
         self.device_name = device_name
 
+        start_time_test = time.time_ns()
+
         self.logger.debug('transition_to_buffered')
         # stop current task
         self.stop_task()
@@ -939,6 +945,10 @@ class Ni_DAQmxAcquisitionWorker(Worker):
             self.buffered_data = numpy.zeros((1,len(self.buffered_channels)),dtype=numpy.float64)
 
         self.setup_task()
+
+
+        end_time_test = time.time_ns()
+        print(f"transition to buffered (acquisition) on NI Card {device_name} took {(end_time_test - start_time_test)*1e-6:.1f}ms")
 
         return {}
 
@@ -1179,6 +1189,7 @@ class Ni_DAQmxWaitMonitorWorker(Worker):
     def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
         self.logger.debug('transition_to_buffered')
         # Save h5file path (for storing data later!)
+        start_time_test = time.time_ns()
         self.h5_file = h5file
         self.is_wait_monitor_device = False # Will be set to true in a moment if necessary
         self.logger.debug('setup_task')
@@ -1236,6 +1247,11 @@ class Ni_DAQmxWaitMonitorWorker(Worker):
             # Not a daemon thread, as it implements wait timeouts - we need it to stay alive if other things die.
             self.read_thread.start()
             self.logger.debug('finished transition to buffered')
+
+
+
+        end_time_test = time.time_ns()
+        print(f"transition to buffered on NI Card {device_name} took {(end_time_test - start_time_test)*1e-6:.1f}ms")
 
         return {}
 
