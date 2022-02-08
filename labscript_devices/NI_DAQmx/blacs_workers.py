@@ -35,6 +35,56 @@ from .utils import split_conn_port, split_conn_DO, split_conn_AI
 from .daqmx_utils import incomplete_sample_detection
 
 
+if sys.platform != 'win32':
+    from time import perf_counter
+    try:
+        from time import perf_counter_ns
+    except ImportError:
+        def perf_counter_ns():
+            """perf_counter_ns() -> int
+
+            Performance counter for benchmarking as nanoseconds.
+            """
+            return int(perf_counter() * 10**9)
+else:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+
+    kernel32.QueryPerformanceFrequency.argtypes = (
+        wintypes.PLARGE_INTEGER,) # lpFrequency
+
+    kernel32.QueryPerformanceCounter.argtypes = (
+        wintypes.PLARGE_INTEGER,) # lpPerformanceCount
+
+    _qpc_frequency = wintypes.LARGE_INTEGER()
+    if not kernel32.QueryPerformanceFrequency(ctypes.byref(_qpc_frequency)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    _qpc_frequency = _qpc_frequency.value
+
+    def perf_counter_ns():
+        """perf_counter_ns() -> int
+
+        Performance counter for benchmarking as nanoseconds.
+        """
+        count = wintypes.LARGE_INTEGER()
+        if not kernel32.QueryPerformanceCounter(ctypes.byref(count)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return (count.value * 10**9) // _qpc_frequency
+
+    def perf_counter():
+        """perf_counter() -> float
+
+        Performance counter for benchmarking.
+        """
+        count = wintypes.LARGE_INTEGER()
+        if not kernel32.QueryPerformanceCounter(ctypes.byref(count)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return count.value / _qpc_frequency
+
+
+
 class NI_DAQmxOutputWorker(Worker):
     def init(self):
         self.check_version()
@@ -308,6 +358,7 @@ class NI_DAQmxOutputWorker(Worker):
         return final_values
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+        print(f"{threading.get_ident()}, NI_DAQmxOutputWorker, {self.device_name}, transition_to_buffered_start, {h5file}, {perf_counter_ns()}")
         # Store the initial values in case we have to abort and restore them:
         self.initial_values = initial_values
 
@@ -333,12 +384,15 @@ class NI_DAQmxOutputWorker(Worker):
         if self.wait_timeout_device == self.device_name:
             final_values[self.wait_timeout_connection] = self.wait_timeout_rearm_value
 
+        print(f"{threading.get_ident()}, NI_DAQmxOutputWorker, {self.device_name}, transition_to_buffered_end, {h5file}, {perf_counter_ns()}")
         return final_values
 
     def transition_to_manual(self, abort=False):
         # Stop output tasks and call program_manual. Only call StopTask if not aborting.
         # Otherwise results in an error if output was incomplete. If aborting, call
         # ClearTask only.
+        print(f"{threading.get_ident()}, NI_DAQmxOutputWorker, {self.device_name}, transition_to_manual_start, ?, {perf_counter_ns()}")
+
         npts = uInt64()
         samples = uInt64()
         tasks = []
@@ -368,7 +422,7 @@ class NI_DAQmxOutputWorker(Worker):
                         self.logger.info(msg, name, current, total)
                 task.StopTask()
             task.ClearTask()
-
+            
         # Remove the mirroring of the clock terminal, if applicable:
         self.set_mirror_clock_terminal_connected(False)
 
@@ -378,6 +432,7 @@ class NI_DAQmxOutputWorker(Worker):
             # Reprogram the initial states:
             self.program_manual(self.initial_values)
 
+        print(f"{threading.get_ident()}, NI_DAQmxOutputWorker, {self.device_name}, transition_to_manual_end, ?, {perf_counter_ns()}")
         return True
 
     def abort_transition_to_buffered(self):
@@ -520,6 +575,7 @@ class NI_DAQmxAcquisitionWorker(Worker):
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         self.logger.debug('transition_to_buffered')
+        print(f"{threading.get_ident()}, NI_DAQmxAcquisitionWorker, {self.device_name}, transition_to_buffered_start, {h5file}, {perf_counter_ns()}")
 
         # read channels, acquisition rate, etc from H5 file
         with h5py.File(h5file, 'r') as f:
@@ -544,10 +600,13 @@ class NI_DAQmxAcquisitionWorker(Worker):
         self.stop_task()
         self.buffered_mode = True
         self.start_task(self.buffered_chans, self.buffered_rate)
+        
+        print(f"{threading.get_ident()}, NI_DAQmxAcquisitionWorker, {self.device_name}, transition_to_buffered_end, {h5file}, {perf_counter_ns()}")
         return {}
 
     def transition_to_manual(self, abort=False):
         self.logger.debug('transition_to_manual')
+        print(f"{threading.get_ident()}, NI_DAQmxAcquisitionWorker, {self.device_name}, transition_to_manual_start, ?, {perf_counter_ns()}")
         #  If we were doing buffered mode acquisition, stop the buffered mode task and
         # start the manual mode task. We might not have been doing buffered mode
         # acquisition if abort() was called when we are not in buffered mode, or if
@@ -593,6 +652,7 @@ class NI_DAQmxAcquisitionWorker(Worker):
             msg = 'No acquisitions in this shot.'
         self.logger.info(msg)
 
+        print(f"{threading.get_ident()}, NI_DAQmxAcquisitionWorker, {self.device_name}, transition_to_manual_end, ?, {perf_counter_ns()}")
         return True
 
     def extract_measurements(self, raw_data, waits_in_use):
@@ -876,6 +936,8 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         self.logger.debug('transition_to_buffered')
+        print(f"{threading.get_ident()}, NI_DAQmxWaitMonitorWorker, {self.device_name}, transition_to_buffered_start, {h5file}, {perf_counter_ns()}")
+
         self.h5_file = h5file
         with h5py.File(h5file, 'r') as hdf5_file:
             dataset = hdf5_file['waits']
@@ -896,10 +958,13 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.wait_monitor_thread.start()
         self.logger.debug('finished transition to buffered')
 
+        print(f"{threading.get_ident()}, NI_DAQmxWaitMonitorWorker, {self.device_name}, transition_to_buffered_end, {h5file}, {perf_counter_ns()}")
+
         return {}
 
     def transition_to_manual(self, abort=False):
-        self.logger.debug('transition_to_manual')
+        self.logger.debug('transition_to_manual')        
+        print(f"{threading.get_ident()}, NI_DAQmxWaitMonitorWorker, {self.device_name}, transition_to_manual_start, {self.h5_file}, {perf_counter_ns()}")
         self.stop_tasks(abort)
         if not abort and self.wait_table is not None:
             # Let's work out how long the waits were. The absolute times of each edge on
@@ -941,6 +1006,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
         self.h5_file = None
         self.semiperiods = None
+        print(f"{threading.get_ident()}, NI_DAQmxWaitMonitorWorker, {self.device_name}, transition_to_manual_end, {self.h5_file}, {perf_counter_ns()}")
         return True
 
     def abort_buffered(self):
