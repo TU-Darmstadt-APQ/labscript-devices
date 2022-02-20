@@ -88,6 +88,8 @@ class DummyIntermediateDevice(IntermediateDevice):
         for device in self.child_devices:
             out_table[device.name][:] = device.raw_output
 
+        group.create_dataset('TIMES', data=times, compression=config.compression)
+
         group.create_dataset('OUTPUTS', compression=config.compression, data=out_table)
 
 

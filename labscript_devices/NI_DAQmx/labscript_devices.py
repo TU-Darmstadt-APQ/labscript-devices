@@ -593,6 +593,9 @@ class NI_DAQmx(IntermediateDevice):
         self._check_wait_monitor_timeout_device_config()
 
         grp = self.init_device_group(hdf5_file)
+
+        grp.create_dataset('times', data=times, compression=config.compression)
+
         if AO_table is not None:
             grp.create_dataset('AO', data=AO_table, compression=config.compression)
         if DO_table is not None:
