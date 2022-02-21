@@ -16,7 +16,7 @@ import h5py
 from blacs.tab_base_classes import Worker
 from labscript_utils.connections import _ensure_str
 import labscript_utils.properties as properties
-
+import zmq
 
 class PrawnBlasterWorker(Worker):
     """The primary worker for the PrawnBlaster.
@@ -216,7 +216,7 @@ class PrawnBlasterWorker(Worker):
 
         return values
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
         """Configures the PrawnBlaster for buffered execution.
 
         Args:
@@ -229,6 +229,25 @@ class PrawnBlasterWorker(Worker):
         Returns:
             dict: Dictionary of the expected final output states.
         """
+
+
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REP)
+        self.socket.bind("tcp://*:5355")
+
+
+        # print('Binding to port 5555')
+        # message = self.socket.recv()
+        # print(f"Received request: {message}")
+        # self.socket.send(b"Message Received")
+
+        trials = 10
+        for i in range(trials):
+            start  = time.perf_counter()
+            message = self.socket.recv()
+            self.socket.send(b"Message Received")
+            finish = time.perf_counter() - start
+            print(f"Took total of {finish*1e3:.2f}ms")
 
         if fresh:
             self.smart_cache = {}

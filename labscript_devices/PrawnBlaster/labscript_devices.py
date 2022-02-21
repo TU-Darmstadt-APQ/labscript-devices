@@ -377,19 +377,23 @@ class PrawnBlaster(PseudoclockDevice):
                     # If we're using the internal wait monitor, set the timeout
                     if self.use_wait_monitor:
                         # Get the wait timeout value
-                        wait_timeout = compiler.wait_table[
-                            wait_table[current_wait_index]
-                        ][1]
-                        current_wait_index += 1
+                        # 
+                        # TODO: Fix that.... problem is that if we trigger all clocks during a jump, this is seen as a wait
+                        # Requires to create a second array that stores jump times. Then we can check whether it is a jump or wait 
+
+                        # wait_timeout = compiler.wait_table[
+                        #     wait_table[current_wait_index]
+                        # ][1]
+                        # current_wait_index += 1
                         # The following half_period and reps indicates a wait instruction
-                        reduced_instructions.append(
-                            {
-                                "half_period": round(
-                                    wait_timeout / (self.clock_resolution / 2)
-                                ),
-                                "reps": 0,
-                            }
-                        )
+                        # reduced_instructions.append(
+                        #     {
+                        #         "half_period": round(
+                        #             0.00000304/(self.clock_resolution / 2)
+                        #         ),
+                        #         "reps": 1,
+                        #     }
+                        # )
                         continue
                     # Else, set an indefinite wait and wait for a trigger from something else.
                     else:
@@ -451,6 +455,15 @@ class PrawnBlaster(PseudoclockDevice):
                 pulse_program[j]["reps"] = instruction["reps"]
             group.create_dataset(
                 f"PULSE_PROGRAM_{i}", compression=config.compression, data=pulse_program
+            )
+
+            times = np.zeros(len(reduced_instructions))
+            time_acc = 0
+            for j, instruction in enumerate(reduced_instructions):
+                times[j] = time_acc
+                time_acc += instruction["half_period"] * instruction["reps"] * self.clock_resolution
+            group.create_dataset(
+                f"TIMES_{i}", compression=config.compression, data=times
             )
 
         # This is needed so the BLACS worker knows whether or not to be a wait monitor

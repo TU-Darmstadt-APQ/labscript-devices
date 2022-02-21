@@ -18,6 +18,8 @@ from PyDAQmx.DAQmxConstants import *
 from PyDAQmx.DAQmxTypes import *
 from PyDAQmx.DAQmxCallBack import *
 
+import zmq
+
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 import labscript_utils.h5_lock
@@ -37,6 +39,8 @@ from .daqmx_utils import incomplete_sample_detection
 
 class NI_DAQmxOutputWorker(Worker):
     def init(self):
+
+
         self.check_version()
         # Reset Device: clears previously added routes etc. Note: is insufficient for
         # some devices, which require power cycling to truly reset.
@@ -307,9 +311,22 @@ class NI_DAQmxOutputWorker(Worker):
 
         return final_values
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
         # Store the initial values in case we have to abort and restore them:
         self.initial_values = initial_values
+
+
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect("tcp://localhost:5355")
+
+        trials = 10
+        for i in range(trials):
+            start  = time.perf_counter()
+            self.socket.send(b"Hello")
+            message = self.socket.recv()
+            finish = time.perf_counter() - start
+            print(f"Took total of {finish*1e3:.2f}ms")
 
         # Stop the manual mode output tasks, if any:
         self.stop_tasks()
@@ -518,7 +535,7 @@ class NI_DAQmxAcquisitionWorker(Worker):
             self.task = None
             self.read_array = None
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
         self.logger.debug('transition_to_buffered')
 
         # read channels, acquisition rate, etc from H5 file
@@ -874,7 +891,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                 1, True, 1, DAQmx_Val_GroupByChannel, self.timeout_rearm, written, None
             )
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
         self.logger.debug('transition_to_buffered')
         self.h5_file = h5file
         with h5py.File(h5file, 'r') as hdf5_file:
