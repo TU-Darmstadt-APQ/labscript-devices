@@ -17,6 +17,13 @@ from blacs.tab_base_classes import Worker
 from labscript_utils.connections import _ensure_str
 import labscript_utils.properties as properties
 import zmq
+import threading
+import numpy as np
+
+TMP_DEVICE_ADRESSES = {
+    "PrawnBlaster": 43555,
+    "NIOutput": 43556
+}
 
 class PrawnBlasterWorker(Worker):
     """The primary worker for the PrawnBlaster.
@@ -68,6 +75,14 @@ class PrawnBlasterWorker(Worker):
             assert self.prawnblaster.readline().decode() == "ok\r\n"
             self.prawnblaster.write(b"setinpin %d %d\r\n" % (i, in_pin))
             assert self.prawnblaster.readline().decode() == "ok\r\n"
+
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect(f"tcp://localhost:{TMP_DEVICE_ADRESSES['PrawnBlaster']}")
+
+        self.run_thread = None
+
+        self.sections = []
 
     def check_status(self):
         """Checks the operational status of the PrawnBlaster.
@@ -216,101 +231,40 @@ class PrawnBlasterWorker(Worker):
 
         return values
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
-        """Configures the PrawnBlaster for buffered execution.
+    def run_experiment(self):
+        while True:
 
-        Args:
-            device_name (str): labscript name of PrawnBlaster
-            h5file (str): path to shot file to be run
-            initial_values (dict): Dictionary of output states at start of shot
-            fresh (bool): When `True`, clear the local :py:attr:`smart_cache`, forcing
-                a complete reprogramming of the output table.
+            # time.sleep(0.12) # TODO: fix this hack...
+            while True:
+                time.sleep(0.01)
+                run_status, clock_status = self.read_status()
+                if run_status == 0:
+                    break
 
-        Returns:
-            dict: Dictionary of the expected final output states.
-        """
+            self.socket.send(b"fin")
+            msg = self.socket.recv() # load message
+            print(msg, msg == b'exit')
 
+            if msg == b'exit':
+                print("BREAK")
+                return
 
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.REP)
-        self.socket.bind("tcp://*:5355")
+            print("Get next section")
+            next_section = int(msg.split()[-1])
+            print(f"Next section is {next_section}")
 
+            self.program_clock(next_section)
 
-        # print('Binding to port 5555')
-        # message = self.socket.recv()
-        # print(f"Received request: {message}")
-        # self.socket.send(b"Message Received")
+            self.socket.send(b"rdy")
+            msg = self.socket.recv() # load message
 
-        trials = 10
-        for i in range(trials):
-            start  = time.perf_counter()
-            message = self.socket.recv()
-            self.socket.send(b"Message Received")
-            finish = time.perf_counter() - start
-            print(f"Took total of {finish*1e3:.2f}ms")
+            self.start_run()
 
-        if fresh:
-            self.smart_cache = {}
+            print(msg)
 
-        # fmt: off
-        self.h5_file = h5file  # store reference to h5 file for wait monitor
-        self.current_wait = 0  # reset wait analysis
-        self.started = False   # Prevent status check from detecting previous wait values
-        #                        betwen now and when we actually send the start signal
-        # fmt: on
-
-        # Get data from HDF5 file
-        pulse_programs = []
-        with h5py.File(h5file, "r") as hdf5_file:
-            group = hdf5_file[f"devices/{device_name}"]
-            for i in range(self.num_pseudoclocks):
-                pulse_programs.append(group[f"PULSE_PROGRAM_{i}"][:])
-                self.smart_cache.setdefault(i, [])
-            self.device_properties = labscript_utils.properties.get(
-                hdf5_file, device_name, "device_properties"
-            )
-            self.is_master_pseudoclock = self.device_properties["is_master_pseudoclock"]
-
-            # waits
-            dataset = hdf5_file["waits"]
-            acquisition_device = dataset.attrs["wait_monitor_acquisition_device"]
-            timeout_device = dataset.attrs["wait_monitor_timeout_device"]
-            if (
-                len(dataset) > 0
-                and acquisition_device
-                == "%s_internal_wait_monitor_outputs" % device_name
-                and timeout_device == "%s_internal_wait_monitor_outputs" % device_name
-            ):
-                self.wait_table = dataset[:]
-                self.measured_waits = numpy.zeros(len(self.wait_table))
-                self.wait_timeout = numpy.zeros(len(self.wait_table), dtype=bool)
-            else:
-                self.wait_table = (
-                    None  # This device doesn't need to worry about looking at waits
-                )
-                self.measured_waits = None
-                self.wait_timeout = None
-
-        # Configure clock from device properties
-        clock_mode = 0
-        if self.device_properties["external_clock_pin"] is not None:
-            if self.device_properties["external_clock_pin"] == 20:
-                clock_mode = 1
-            elif self.device_properties["external_clock_pin"] == 22:
-                clock_mode = 2
-            else:
-                raise RuntimeError(
-                    f"Invalid external clock pin {self.device_properties['external_clock_pin']}. Pin must be 20, 22 or None."
-                )
-        clock_frequency = self.device_properties["clock_frequency"]
-
-        # Now set the clock details
-        self.prawnblaster.write(b"setclock %d %d\r\n" % (clock_mode, clock_frequency))
-        response = self.prawnblaster.readline().decode()
-        assert response == "ok\r\n", f"PrawnBlaster said '{response}', expected 'ok'"
-
+    def program_clock(self, section):
         # Program instructions
-        for pseudoclock, pulse_program in enumerate(pulse_programs):
+        for pseudoclock, pulse_program in enumerate(self.sections[section]['pulse_program']):
             for i, instruction in enumerate(pulse_program):
                 if i == len(self.smart_cache[pseudoclock]):
                     # Pad the smart cache out to be as long as the program:
@@ -336,6 +290,150 @@ class PrawnBlasterWorker(Worker):
         if not self.is_master_pseudoclock:
             # Start the Prawnblaster and have it wait for a hardware trigger
             self.wait_for_trigger()
+
+
+    def filter_data_by_time(self, time, values, min_time, max_time):
+
+        if time is None:
+            return None
+        if values is None:
+            return None
+
+        return_values = []
+        for i in range(len(values)):
+            if min_time <= time[i] <= max_time:
+                return_values.append(values[i])
+        return np.array(return_values)
+
+    def compile_sections(self, h5file, device_name):
+        
+        # Get data from HDF5 file
+        pulse_programs = []
+        pulse_program_times = []
+        with h5py.File(h5file, "r") as hdf5_file:
+            group = hdf5_file[f"devices/{device_name}"]
+            for i in range(self.num_pseudoclocks):
+                pulse_programs.append(group[f"PULSE_PROGRAM_{i}"][:])
+                pulse_program_times.append(group[f"TIMES_{i}"][:])
+                self.smart_cache.setdefault(i, [])
+            self.device_properties = labscript_utils.properties.get(
+                hdf5_file, device_name, "device_properties"
+            )
+            self.is_master_pseudoclock = self.device_properties["is_master_pseudoclock"]
+
+            # waits
+            # dataset = hdf5_file["waits"]
+            # acquisition_device = dataset.attrs["wait_monitor_acquisition_device"]
+            # timeout_device = dataset.attrs["wait_monitor_timeout_device"]
+            # if (
+            #     len(dataset) > 0
+            #     and acquisition_device
+            #     == "%s_internal_wait_monitor_outputs" % device_name
+            #     and timeout_device == "%s_internal_wait_monitor_outputs" % device_name
+            # ):
+            #     self.wait_table = dataset[:]
+            #     self.measured_waits = numpy.zeros(len(self.wait_table))
+            #     self.wait_timeout = numpy.zeros(len(self.wait_table), dtype=bool)
+            # else:
+            #     self.wait_table = (
+            #         None  # This device doesn't need to worry about looking at waits
+            #     )
+            #     self.measured_waits = None
+            #     self.wait_timeout = None
+
+            jumps = hdf5_file['jumps'][:]
+            end_time = hdf5_file['devices']['PB'].attrs['stop_time']
+            
+        timestamps = []
+        for j in range(len(jumps)):
+            timestamps.append(jumps[j]["time"])
+            timestamps.append(jumps[j]["to_time"])
+
+        timestamps.append(0)
+        timestamps.append(end_time) # TODO: final time
+
+        timestamps = sorted(set(timestamps))
+
+        self.sections = []
+        for i in range(len(timestamps)-1):
+
+            print(f"Generate section {i}")
+
+            start = timestamps[i]
+            end = timestamps[i+1]
+            
+            # Just overwrite every time as we are only interested in the last ones...
+            # DO_final_values, DO_task, DO_all_zero = self.program_buffered_DO(self.filter_data_by_time(times_table, DO_table, start, end))
+            # AO_final_values, AO_task, AO_all_zero = self.program_buffered_AO(self.filter_data_by_time(times_table, AO_table, start, end))
+
+            current_pulse_program = []
+
+            for j in range(len(pulse_programs)):
+                pp = pulse_programs[j]
+                pt = pulse_program_times[j]
+                current_pulse_program.append(self.filter_data_by_time(pt, pp, start, end))
+
+
+            section = {
+                "start": start,
+                "end": end,
+                "pulse_program": current_pulse_program
+            }
+
+
+            self.sections.append(section)
+
+
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
+        print("Transition to buffered")
+        """Configures the PrawnBlaster for buffered execution.
+
+        Args:
+            device_name (str): labscript name of PrawnBlaster
+            h5file (str): path to shot file to be run
+            initial_values (dict): Dictionary of output states at start of shot
+            fresh (bool): When `True`, clear the local :py:attr:`smart_cache`, forcing
+                a complete reprogramming of the output table.
+
+        Returns:
+            dict: Dictionary of the expected final output states.
+        """
+
+        if fresh:
+            self.smart_cache = {}
+
+        # fmt: off
+        self.h5_file = h5file  # store reference to h5 file for wait monitor
+        self.current_wait = 0  # reset wait analysis
+        self.started = False   # Prevent status check from detecting previous wait values
+        #                        betwen now and when we actually send the start signal
+        # fmt: on
+
+        self.compile_sections(h5file, device_name)
+
+        # # Configure clock from device properties
+        clock_mode = 0
+        if self.device_properties["external_clock_pin"] is not None:
+            if self.device_properties["external_clock_pin"] == 20:
+                clock_mode = 1
+            elif self.device_properties["external_clock_pin"] == 22:
+                clock_mode = 2
+            else:
+                raise RuntimeError(
+                    f"Invalid external clock pin {self.device_properties['external_clock_pin']}. Pin must be 20, 22 or None."
+                )
+        clock_frequency = self.device_properties["clock_frequency"]
+
+        # Now set the clock details
+        self.prawnblaster.write(b"setclock %d %d\r\n" % (clock_mode, clock_frequency))
+        response = self.prawnblaster.readline().decode()
+        assert response == "ok\r\n", f"PrawnBlaster said '{response}', expected 'ok'"
+
+        self.program_clock(0)
+
+        self.run_thread = threading.Thread(target=self.run_experiment)
+        self.run_thread.start()
+
 
         # All outputs end on 0
         final = {}
@@ -391,6 +489,8 @@ class PrawnBlasterWorker(Worker):
             bool: `True` if transition to manual is successful.
         """
 
+        self.run_thread.join()
+
         if self.wait_table is not None:
             with h5py.File(self.h5_file, "a") as hdf5_file:
                 # Work out how long the waits were, save em, post an event saying so
@@ -435,6 +535,9 @@ class PrawnBlasterWorker(Worker):
         """Cleanly shuts down the connection to the PrawnBlaster hardware."""
 
         self.prawnblaster.close()
+
+        self.socket.close()
+        self.context.term()
 
     def abort_buffered(self):
         """Aborts a currently running buffered execution.

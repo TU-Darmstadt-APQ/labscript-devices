@@ -157,4 +157,4 @@ class PrawnBlasterTab(DeviceTab):
         self.statemachine_timeout_remove(self.status_monitor)
         yield (self.queue_work(self.primary_worker, "start_run"))
         self.status_monitor()
-        self.statemachine_timeout_add(100, self.status_monitor, notify_queue)
+        self.statemachine_timeout_add(1000, self.status_monitor, notify_queue) # TODO: lower again (maybe mutex) after initial testing

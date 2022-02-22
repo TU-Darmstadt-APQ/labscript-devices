@@ -594,7 +594,7 @@ class NI_DAQmx(IntermediateDevice):
 
         grp = self.init_device_group(hdf5_file)
 
-        grp.create_dataset('times', data=times, compression=config.compression)
+        grp.create_dataset('TIMES', data=times, compression=config.compression)
 
         if AO_table is not None:
             grp.create_dataset('AO', data=AO_table, compression=config.compression)

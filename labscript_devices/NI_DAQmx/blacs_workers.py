@@ -10,6 +10,7 @@
 # file in the root of the project for the full license.             #
 #                                                                   #
 #####################################################################
+from asyncio import current_task
 import sys
 import time
 import threading
@@ -35,7 +36,172 @@ from blacs.tab_base_classes import Worker
 
 from .utils import split_conn_port, split_conn_DO, split_conn_AI
 from .daqmx_utils import incomplete_sample_detection
+    
 
+TMP_DEVICE_ADRESSES = {
+    "PrawnBlaster": 43555,
+    "NIOutput": 43556
+}
+
+RUNNING = "run"
+FINISHED = "fin"
+LOADING = "lod"
+READY = "rdy"
+EXITED = "ext"
+
+
+class NI_DAQmxJumpWorker(Worker):
+    def init(self):
+
+        print("Hello world! from the JumpWorker")
+
+        self.context = zmq.Context()
+        self.sockets = {}
+        for dev in TMP_DEVICE_ADRESSES:
+            socket = self.context.socket(zmq.REP)
+            socket.bind(f"tcp://*:{TMP_DEVICE_ADRESSES[dev]}")
+            self.sockets[dev] = socket
+
+        self.sections = []
+        self.current_section = 0
+        self.total_past_t = 0
+
+        self.device_states = {}
+        for dev in TMP_DEVICE_ADRESSES:
+            self.device_states[dev] = EXITED
+
+        self.jump_thread = None
+
+    def shutdown(self):
+        print("Bye")
+        for dev in self.sockets:
+            self.sockets[dev].close()
+        self.context.term()
+
+
+    def run_experiment(self):
+
+        print("Run experiment")
+        jump_counter = 0
+
+        while True:
+            print("Next block")
+            start_time = time.perf_counter()
+            # Wait for all devices to finish
+            for dev in self.device_states:
+                if self.device_states[dev] == FINISHED:
+                    continue
+                msg = self.sockets[dev].recv()
+                print(f"{dev}: {msg}")
+
+            # Evaluate which section is next
+            next_section = self.current_section + 1
+            if self.sections[self.current_section]['jump']:
+                # TODO: evaluate where to jump. Currently just jump 5 times.
+                if jump_counter < 5:
+                    jump_counter += 1
+                    for s in range(len(self.sections)):
+                        if self.sections[s]['start'] == self.sections[self.current_section]['to_time']:
+                            next_section = s
+                            break
+
+            if next_section >= len(self.sections):
+                for dev in self.sockets:
+                    self.sockets[dev].send(b"exit")
+                break # Shot finished
+
+            print("section ", next_section)
+            self.current_section = next_section
+
+            # Prepare all devices
+            for dev in self.device_states:
+                self.sockets[dev].send(str.encode(f"load {next_section}"))
+                self.device_states[dev] = LOADING
+
+            # Wait for all devices to be ready
+            for dev in self.device_states:
+                msg = self.sockets[dev].recv()
+                print(f"{dev}: {msg}")
+                self.device_states[dev] = READY
+                if dev != "PrawnBlaster":
+                    self.sockets[dev].send(b"ok")
+
+            # Send start signal
+            self.sockets['PrawnBlaster'].send(b"start")
+
+            for dev in self.device_states:
+                self.device_states[dev] = RUNNING
+            finish_time = time.perf_counter()
+            t = finish_time - start_time
+            print(f"Loop took {t*1e6:.2f}us")
+        print("Finished experiment...")
+
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
+
+        self.current_section = 0
+        self.total_past_t = 0
+
+        for dev in TMP_DEVICE_ADRESSES:
+            self.device_states[dev] = RUNNING
+
+        with h5py.File(h5file, 'r') as hdf5_file:
+            jumps = hdf5_file['jumps'][:]
+            end_time = hdf5_file['devices']['PB'].attrs['stop_time']
+            
+        timestamps = []
+        for j in range(len(jumps)):
+            timestamps.append(jumps[j]["time"])
+            timestamps.append(jumps[j]["to_time"])
+
+        timestamps.append(0)
+        timestamps.append(end_time) # TODO: final time
+
+        timestamps = sorted(set(timestamps))
+
+        self.sections = []
+        for i in range(len(timestamps)-1):
+            start = timestamps[i]
+            end = timestamps[i+1]
+            jump = False
+            to_time = 0
+            for i in range(len(jumps)):
+                if jumps[i]['time'] == end:
+                    jump = True
+                    to_time = jumps[i]['to_time']
+                    break
+            section = {
+                "start": start,
+                "end": end,
+                "jump": jump,
+                "to_time": to_time
+            }
+
+            self.sections.append(section)
+
+        print("Start jump thread")
+        self.jump_thread = threading.Thread(target=self.run_experiment)
+        self.jump_thread.start()
+
+        print(self.sections)
+        return {}
+
+
+
+    def transition_to_manual(self, abort=False):
+
+        # TODO: stop run thread
+
+        self.device_states = {}
+        for dev in TMP_DEVICE_ADRESSES:
+            self.device_states[dev] = EXITED
+
+        return True
+
+    def abort_transition_to_buffered(self):
+        return self.transition_to_manual(True)
+
+    def abort_buffered(self):
+        return self.transition_to_manual(True)
 
 class NI_DAQmxOutputWorker(Worker):
     def init(self):
@@ -46,6 +212,14 @@ class NI_DAQmxOutputWorker(Worker):
         # some devices, which require power cycling to truly reset.
         DAQmxResetDevice(self.MAX_name)
         self.start_manual_mode_tasks()
+
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect(f"tcp://localhost:{TMP_DEVICE_ADRESSES['NIOutput']}")
+
+        self.run_thread = None
+
+        self.sections = []
 
     def stop_tasks(self):
         if self.AO_task is not None:
@@ -59,6 +233,9 @@ class NI_DAQmxOutputWorker(Worker):
 
     def shutdown(self):
         self.stop_tasks()
+        
+        self.socket.close()
+        self.context.term()
 
     def check_version(self):
         """Check the version of PyDAQmx is high enough to avoid a known bug"""
@@ -151,7 +328,11 @@ class NI_DAQmxOutputWorker(Worker):
                 DO_table = group['DO'][:]
             except KeyError:
                 DO_table = None
-        return AO_table, DO_table
+            try:
+                times_table = group['TIMES'][:]
+            except KeyError:
+                times_table = None
+        return AO_table, DO_table, times_table
 
     def set_mirror_clock_terminal_connected(self, connected):
         """Mirror the clock terminal on another terminal to allow daisy chaining of the
@@ -277,7 +458,7 @@ class NI_DAQmxOutputWorker(Worker):
             # Static AO. Start the task and write data, no timing configuration.
             self.AO_task.StartTask()
             self.AO_task.WriteAnalogF64(
-                1, True, 10.0, DAQmx_Val_GroupByChannel, AO_table, written, None
+                1, False, 10.0, DAQmx_Val_GroupByChannel, AO_table, written, None
             )
         else:
             # We use all but the last sample (which is identical to the second last
@@ -311,35 +492,132 @@ class NI_DAQmxOutputWorker(Worker):
 
         return final_values
 
+
+
+    def run_experiment(self):
+        print("RUN EXPERIMENT")
+
+        current_section = 0
+
+        while True:
+
+            if self.AO_task is not None:
+                self.AO_task.WaitUntilTaskDone(-1)
+                self.AO_task.StopTask()
+
+                
+            if self.DO_task is not None:
+                self.DO_task.WaitUntilTaskDone(-1)
+                self.DO_task.StopTask()
+
+            self.socket.send(b"fin")
+            msg = self.socket.recv() # load message
+            print(msg)
+
+            if msg == b"exit":
+                break
+            
+            next_section = int(msg.split()[1])
+            print(f"Next section is {next_section}")
+            
+            if current_section != next_section:
+
+                if not self.static_AO and not self.AO_all_zero:
+                    self.AO_task.ClearTask()
+                if not self.static_DO and not self.DO_all_zero:
+                    self.DO_task.ClearTask()
+
+                self.program_buffered_AO(self.sections[next_section]['AO_values'])
+                self.program_buffered_DO(self.sections[next_section]['DO_values'])
+            else:
+                if self.AO_task is not None:
+                    self.AO_task.StartTask()
+                if self.DO_task is not None:
+                    self.DO_task.StartTask()
+
+            current_section = next_section
+
+            self.socket.send(b"rdy")
+            msg = self.socket.recv() # load message
+            print(msg)
+
+
+    def filter_data_by_time(self, time, values, min_time, max_time):
+
+        if time is None:
+            return None
+        if values is None:
+            return None
+
+        return_values = []
+        for i in range(len(values)):
+            if min_time <= time[i] <= max_time:
+                return_values.append(values[i])
+        return np.array(return_values)
+
+    def compile_sections(self, h5file, device_name):
+        print("Hello")
+        # Get the data to be programmed into the output tasks:
+        AO_table, DO_table, times_table = self.get_output_tables(h5file, device_name)
+
+        with h5py.File(h5file, 'r') as hdf5_file:
+            jumps = hdf5_file['jumps'][:]
+            end_time = hdf5_file['devices']['PB'].attrs['stop_time']
+            
+        timestamps = []
+        for j in range(len(jumps)):
+            timestamps.append(jumps[j]["time"])
+            timestamps.append(jumps[j]["to_time"])
+
+        timestamps.append(0)
+        timestamps.append(end_time) # TODO: final time
+
+        timestamps = sorted(set(timestamps))
+
+        self.sections = []
+        DO_final_values = {}
+        AO_final_values = {}
+        for i in range(len(timestamps)-1):
+
+            print(f"Generate section {i}")
+
+            start = timestamps[i]
+            end = timestamps[i+1]
+            
+            # Just overwrite every time as we are only interested in the last ones...
+            # DO_final_values, DO_task, DO_all_zero = self.program_buffered_DO(self.filter_data_by_time(times_table, DO_table, start, end))
+            # AO_final_values, AO_task, AO_all_zero = self.program_buffered_AO(self.filter_data_by_time(times_table, AO_table, start, end))
+
+            section = {
+                "start": start,
+                "end": end,
+                "AO_values": self.filter_data_by_time(times_table, AO_table, start, end),
+                "DO_values": self.filter_data_by_time(times_table, DO_table, start, end)
+            }
+
+            if section['AO_values'] is not None:
+                AO_final_values = dict(zip(section['AO_values'].dtype.names, section['AO_values'][-1]))
+            if section['DO_values'] is not None:
+                DO_final_values = dict(zip(section['DO_values'].dtype.names, section['DO_values'][-1]))
+
+            self.sections.append(section)
+
+
+        return DO_final_values, AO_final_values
+
+
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
         # Store the initial values in case we have to abort and restore them:
         self.initial_values = initial_values
 
-
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.connect("tcp://localhost:5355")
-
-        trials = 10
-        for i in range(trials):
-            start  = time.perf_counter()
-            self.socket.send(b"Hello")
-            message = self.socket.recv()
-            finish = time.perf_counter() - start
-            print(f"Took total of {finish*1e3:.2f}ms")
-
         # Stop the manual mode output tasks, if any:
         self.stop_tasks()
-
-        # Get the data to be programmed into the output tasks:
-        AO_table, DO_table = self.get_output_tables(h5file, device_name)
 
         # Mirror the clock terminal, if applicable:
         self.set_mirror_clock_terminal_connected(True)
 
         # Program the output tasks and retrieve the final values of each output:
-        DO_final_values = self.program_buffered_DO(DO_table)
-        AO_final_values = self.program_buffered_AO(AO_table)
+        DO_final_values, AO_final_values = self.compile_sections(h5file, device_name)
 
         final_values = {}
         final_values.update(DO_final_values)
@@ -350,12 +628,28 @@ class NI_DAQmxOutputWorker(Worker):
         if self.wait_timeout_device == self.device_name:
             final_values[self.wait_timeout_connection] = self.wait_timeout_rearm_value
 
+
+        # Start first task
+        self.program_buffered_AO(self.sections[0]['AO_values'])
+        self.program_buffered_DO(self.sections[0]['DO_values'])
+
+        self.run_thread = threading.Thread(target=self.run_experiment)
+        self.run_thread.start()
+
+        # Get the data to be programmed into the output tasks:
+        # AO_table, DO_table = self.get_output_tables(h5file, device_name)
+
+
         return final_values
 
     def transition_to_manual(self, abort=False):
         # Stop output tasks and call program_manual. Only call StopTask if not aborting.
         # Otherwise results in an error if output was incomplete. If aborting, call
         # ClearTask only.
+
+        if self.run_thread is not None:
+            self.run_thread.join()
+
         npts = uInt64()
         samples = uInt64()
         tasks = []

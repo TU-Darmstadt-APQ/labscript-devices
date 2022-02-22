@@ -161,6 +161,29 @@ class NI_DAQmxTab(DeviceTab):
         )
         self.primary_worker = "main_worker"
 
+        
+        self.create_worker(
+            "jump_worker",
+            'labscript_devices.NI_DAQmx.blacs_workers.NI_DAQmxJumpWorker',
+            {
+                'MAX_name': self.MAX_name,
+                'Vmin': AO_base_min,
+                'Vmax': AO_base_max,
+                'num_AO': num_AO,
+                'ports': ports,
+                'clock_limit': clock_limit,
+                'clock_terminal': clock_terminal,
+                'clock_mirror_terminal': clock_mirror_terminal,
+                'static_AO': static_AO,
+                'static_DO': static_DO,
+                'DO_hardware_names': DO_hardware_names,
+                'wait_timeout_device': wait_timeout_device,
+                'wait_timeout_connection': wait_timeout_connection,
+                'wait_timeout_rearm_value': int(timeout_trigger_type == 'falling')
+            },
+        )
+        self.add_secondary_worker("jump_worker")
+
         if wait_acq_device == self.device_name:
             if wait_timeout_device:
                 wait_timeout_device = connection_table.find_by_name(wait_timeout_device)
