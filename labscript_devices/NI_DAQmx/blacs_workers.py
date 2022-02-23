@@ -39,8 +39,8 @@ from .daqmx_utils import incomplete_sample_detection
     
 
 TMP_DEVICE_ADRESSES = {
-    "PrawnBlaster": 43555,
-    "NIOutput": 43556
+    b"PrawnBlaster": 43555,
+    b"NIOutput": 43556
 }
 
 RUNNING = "run"
@@ -56,11 +56,20 @@ class NI_DAQmxJumpWorker(Worker):
         print("Hello world! from the JumpWorker")
 
         self.context = zmq.Context()
-        self.sockets = {}
-        for dev in TMP_DEVICE_ADRESSES:
-            socket = self.context.socket(zmq.REP)
-            socket.bind(f"tcp://*:{TMP_DEVICE_ADRESSES[dev]}")
-            self.sockets[dev] = socket
+
+
+        self.from_master_socket = self.context.socket(zmq.PUB)
+        self.from_master_socket.bind(f"tcp://*:44555")
+        self.to_master_socket = self.context.socket(zmq.SUB)
+        self.to_master_socket.bind(f"tcp://*:44556")
+        
+        self.to_master_socket.subscribe("")
+
+        # self.sockets = {}
+        # for dev in TMP_DEVICE_ADRESSES:
+        #     socket = self.context.socket(zmq.REP)
+        #     socket.bind(f"tcp://*:{TMP_DEVICE_ADRESSES[dev]}")
+        #     self.sockets[dev] = socket
 
         self.sections = []
         self.current_section = 0
@@ -85,14 +94,30 @@ class NI_DAQmxJumpWorker(Worker):
         jump_counter = 0
 
         while True:
-            print("Next block")
+            #print("Next block")
             start_time = time.perf_counter()
             # Wait for all devices to finish
-            for dev in self.device_states:
-                if self.device_states[dev] == FINISHED:
-                    continue
-                msg = self.sockets[dev].recv()
-                print(f"{dev}: {msg}")
+            while True:
+                msg = self.to_master_socket.recv()
+                #print(msg)
+                device = msg.split()[-1]
+                self.device_states[device] = FINISHED
+                #print(f"DONE {device}")
+
+                is_done = True
+                for dev in self.device_states:
+                    if self.device_states[dev] != FINISHED:
+                        is_done = False
+                        #print(f"Waiting for {dev}")
+                if is_done:
+                    break
+
+            # for dev in self.device_states:
+            #     if self.device_states[dev] == FINISHED:
+            #         continue
+            #     msg = self.sockets[dev].recv()
+            #     print(f"{dev}: {msg}")
+
 
             # Evaluate which section is next
             next_section = self.current_section + 1
@@ -106,28 +131,41 @@ class NI_DAQmxJumpWorker(Worker):
                             break
 
             if next_section >= len(self.sections):
-                for dev in self.sockets:
-                    self.sockets[dev].send(b"exit")
+                self.from_master_socket.send(b"exit")
+                # for dev in self.sockets:
+                #     self.sockets[dev].send(b"exit")
                 break # Shot finished
 
-            print("section ", next_section)
+            #print("section ", next_section)
             self.current_section = next_section
 
             # Prepare all devices
-            for dev in self.device_states:
-                self.sockets[dev].send(str.encode(f"load {next_section}"))
-                self.device_states[dev] = LOADING
+            self.from_master_socket.send(str.encode(f"load {next_section}"))
+            # for dev in self.device_states:
+            #     self.sockets[dev].send(str.encode(f"load {next_section}"))
+            #     self.device_states[dev] = LOADING
 
             # Wait for all devices to be ready
-            for dev in self.device_states:
-                msg = self.sockets[dev].recv()
-                print(f"{dev}: {msg}")
-                self.device_states[dev] = READY
-                if dev != "PrawnBlaster":
-                    self.sockets[dev].send(b"ok")
+            while True:
+                msg = self.to_master_socket.recv()
+                device = msg.split()[-1]
+                self.device_states[device] = READY
+
+                is_done = True
+                for dev in self.device_states:
+                    if self.device_states[dev] != READY:
+                        is_done = False
+                if is_done:
+                    break
+            # for dev in self.device_states:
+            #     msg = self.sockets[dev].recv()
+            #     print(f"{dev}: {msg}")
+            #     self.device_states[dev] = READY
+            #     if dev != "PrawnBlaster":
+            #         self.sockets[dev].send(b"ok")
 
             # Send start signal
-            self.sockets['PrawnBlaster'].send(b"start")
+            self.from_master_socket.send(b"start")
 
             for dev in self.device_states:
                 self.device_states[dev] = RUNNING
@@ -213,9 +251,19 @@ class NI_DAQmxOutputWorker(Worker):
         DAQmxResetDevice(self.MAX_name)
         self.start_manual_mode_tasks()
 
+        # self.context = zmq.Context()
+        # self.socket = self.context.socket(zmq.REQ)
+        # self.socket.connect(f"tcp://localhost:{TMP_DEVICE_ADRESSES['NIOutput']}")
+
+        
         self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.connect(f"tcp://localhost:{TMP_DEVICE_ADRESSES['NIOutput']}")
+        self.from_master_socket = self.context.socket(zmq.SUB)
+        self.to_master_socket = self.context.socket(zmq.PUB)
+
+        self.from_master_socket.connect(f"tcp://localhost:44555")
+        self.to_master_socket.connect(f"tcp://localhost:44556")
+        
+        self.from_master_socket.subscribe("")
 
         self.run_thread = None
 
@@ -510,15 +558,16 @@ class NI_DAQmxOutputWorker(Worker):
                 self.DO_task.WaitUntilTaskDone(-1)
                 self.DO_task.StopTask()
 
-            self.socket.send(b"fin")
-            msg = self.socket.recv() # load message
-            print(msg)
+            self.to_master_socket.send(b"fin NIOutput")
+
+            msg = self.from_master_socket.recv() # load message
+            # print(msg)
 
             if msg == b"exit":
                 break
             
             next_section = int(msg.split()[1])
-            print(f"Next section is {next_section}")
+            # print(f"Next section is {next_section}")
             
             if current_section != next_section:
 
@@ -537,9 +586,9 @@ class NI_DAQmxOutputWorker(Worker):
 
             current_section = next_section
 
-            self.socket.send(b"rdy")
-            msg = self.socket.recv() # load message
-            print(msg)
+            self.to_master_socket.send(b"rdy NIOutput")
+            msg = self.from_master_socket.recv() # load message
+            # print(msg)
 
 
     def filter_data_by_time(self, time, values, min_time, max_time):

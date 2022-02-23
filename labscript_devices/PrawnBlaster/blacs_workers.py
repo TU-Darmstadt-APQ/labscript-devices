@@ -48,6 +48,7 @@ class PrawnBlasterWorker(Worker):
         global zprocess; import zprocess
         self.smart_cache = {}
         self.cached_pll_params = {}
+        self.run_thread = None
         # fmt: on
 
         self.all_waits_finished = zprocess.Event("all_waits_finished", type="post")
@@ -76,11 +77,18 @@ class PrawnBlasterWorker(Worker):
             self.prawnblaster.write(b"setinpin %d %d\r\n" % (i, in_pin))
             assert self.prawnblaster.readline().decode() == "ok\r\n"
 
+        # self.context = zmq.Context()
+        # self.socket = self.context.socket(zmq.REQ)
+        # self.socket.connect(f"tcp://localhost:{TMP_DEVICE_ADRESSES['PrawnBlaster']}")
+        
         self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.connect(f"tcp://localhost:{TMP_DEVICE_ADRESSES['PrawnBlaster']}")
+        self.from_master_socket = self.context.socket(zmq.SUB)
+        self.to_master_socket = self.context.socket(zmq.PUB)
 
-        self.run_thread = None
+        self.from_master_socket.connect(f"tcp://localhost:44555")
+        self.to_master_socket.connect(f"tcp://localhost:44556")
+
+        self.from_master_socket.subscribe("")
 
         self.sections = []
 
@@ -184,7 +192,7 @@ class PrawnBlasterWorker(Worker):
         run_status, clock_status = self.read_status()
         return run_status, clock_status, waits_pending
 
-    def read_status(self):
+    def read_status(self, Total=False):
         """Reads the status of the PrawnBlaster.
 
         Returns:
@@ -193,6 +201,11 @@ class PrawnBlasterWorker(Worker):
                 - **run-status** (int): Run status code
                 - **clock-status** (int): Clock status code
         """
+
+        if (not Total) and (self.run_thread is not None):
+            if self.run_thread.is_alive():
+                print("run_thread is alive. Dont check status")
+                return 2, 0 # TODO
 
         self.prawnblaster.write(b"status\r\n")
         response = self.prawnblaster.readline().decode()
@@ -237,30 +250,31 @@ class PrawnBlasterWorker(Worker):
             # time.sleep(0.12) # TODO: fix this hack...
             while True:
                 time.sleep(0.01)
-                run_status, clock_status = self.read_status()
+                run_status, clock_status = self.read_status(True)
                 if run_status == 0:
                     break
 
-            self.socket.send(b"fin")
-            msg = self.socket.recv() # load message
-            print(msg, msg == b'exit')
+            self.to_master_socket.send(b"fin PrawnBlaster")
+
+            msg = self.from_master_socket.recv() # load message
+            #print(msg, msg == b'exit')
 
             if msg == b'exit':
-                print("BREAK")
+                #print("BREAK")
                 return
 
-            print("Get next section")
+            #print("Get next section")
             next_section = int(msg.split()[-1])
-            print(f"Next section is {next_section}")
+            #print(f"Next section is {next_section}")
 
             self.program_clock(next_section)
 
-            self.socket.send(b"rdy")
-            msg = self.socket.recv() # load message
+            self.to_master_socket.send(b"rdy PrawnBlaster")
+            msg = self.from_master_socket.recv() # load message
 
             self.start_run()
 
-            print(msg)
+            #print(msg)
 
     def program_clock(self, section):
         # Program instructions
@@ -466,7 +480,7 @@ class PrawnBlasterWorker(Worker):
 
         running = False
         while not running:
-            run_status, clock_status = self.read_status()
+            run_status, clock_status = self.read_status(True)
             # If we are running, great, the PrawnBlaster is waiting for a trigger
             if run_status == 2:
                 running = True
@@ -520,7 +534,7 @@ class PrawnBlasterWorker(Worker):
         if not self.is_master_pseudoclock:
             # Wait until shot completes
             while True:
-                run_status, clock_status = self.read_status()
+                run_status, clock_status = self.read_status(True)
                 if run_status == 0:
                     break
                 if run_status in [3, 4, 5]:
@@ -552,7 +566,7 @@ class PrawnBlasterWorker(Worker):
             self.prawnblaster.write(b"abort\r\n")
             assert self.prawnblaster.readline().decode() == "ok\r\n"
             # loop until abort complete
-            while self.read_status()[0] != 5:
+            while self.read_status(True)[0] != 5:
                 time.sleep(0.5)
         return True
 
