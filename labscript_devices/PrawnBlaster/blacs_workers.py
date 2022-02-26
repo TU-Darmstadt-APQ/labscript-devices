@@ -63,19 +63,24 @@ class PrawnBlasterWorker(Worker):
         self.h5_file = None
         self.started = False
 
+        self.start_event = threading.Event()
+
         self.prawnblaster = serial.Serial(self.com_port, 115200, timeout=1)
+        self.serial_lock = threading.Lock()
         self.check_status()
 
         # configure number of pseudoclocks
-        self.prawnblaster.write(b"setnumpseudoclocks %d\r\n" % self.num_pseudoclocks)
-        assert self.prawnblaster.readline().decode() == "ok\r\n"
+        with self.serial_lock:
+            self.prawnblaster.write(b"setnumpseudoclocks %d\r\n" % self.num_pseudoclocks)
+            assert self.prawnblaster.readline().decode() == "ok\r\n"
 
         # Configure pins
-        for i, (out_pin, in_pin) in enumerate(zip(self.out_pins, self.in_pins)):
-            self.prawnblaster.write(b"setoutpin %d %d\r\n" % (i, out_pin))
-            assert self.prawnblaster.readline().decode() == "ok\r\n"
-            self.prawnblaster.write(b"setinpin %d %d\r\n" % (i, in_pin))
-            assert self.prawnblaster.readline().decode() == "ok\r\n"
+        with self.serial_lock:
+            for i, (out_pin, in_pin) in enumerate(zip(self.out_pins, self.in_pins)):
+                self.prawnblaster.write(b"setoutpin %d %d\r\n" % (i, out_pin))
+                assert self.prawnblaster.readline().decode() == "ok\r\n"
+                self.prawnblaster.write(b"setinpin %d %d\r\n" % (i, in_pin))
+                assert self.prawnblaster.readline().decode() == "ok\r\n"
 
         # self.context = zmq.Context()
         # self.socket = self.context.socket(zmq.REQ)
@@ -128,8 +133,10 @@ class PrawnBlasterWorker(Worker):
         ):
             # Try to read out wait. For now, we're only reading out waits from
             # pseudoclock 0 since they should all be the same (requirement imposed by labscript)
-            self.prawnblaster.write(b"getwait %d %d\r\n" % (0, self.current_wait))
-            response = self.prawnblaster.readline().decode()
+            
+            with self.serial_lock:
+                self.prawnblaster.write(b"getwait %d %d\r\n" % (0, self.current_wait))
+                response = self.prawnblaster.readline().decode()
             if response != "wait not yet available\r\n":
                 # Parse the response from the PrawnBlaster
                 wait_remaining = int(response)
@@ -192,7 +199,7 @@ class PrawnBlasterWorker(Worker):
         run_status, clock_status = self.read_status()
         return run_status, clock_status, waits_pending
 
-    def read_status(self, Total=False):
+    def read_status(self, Total = False):
         """Reads the status of the PrawnBlaster.
 
         Returns:
@@ -207,8 +214,9 @@ class PrawnBlasterWorker(Worker):
                 print("run_thread is alive. Dont check status")
                 return 2, 0 # TODO
 
-        self.prawnblaster.write(b"status\r\n")
-        response = self.prawnblaster.readline().decode()
+        with self.serial_lock:
+            self.prawnblaster.write(b"status\r\n")
+            response = self.prawnblaster.readline().decode()
         match = re.match(r"run-status:(\d) clock-status:(\d)(\r\n)?", response)
         if match:
             return int(match.group(1)), int(match.group(2))
@@ -233,23 +241,26 @@ class PrawnBlasterWorker(Worker):
         """
 
         for channel, value in values.items():
-            pin = int(channel.split()[1])
-            pseudoclock = self.out_pins.index(pin)
-            if value:
-                self.prawnblaster.write(b"go high %d\r\n" % pseudoclock)
-            else:
-                self.prawnblaster.write(b"go low %d\r\n" % pseudoclock)
+            with self.serial_lock:
+                pin = int(channel.split()[1])
+                pseudoclock = self.out_pins.index(pin)
+                if value:
+                    self.prawnblaster.write(b"go high %d\r\n" % pseudoclock)
+                else:
+                    self.prawnblaster.write(b"go low %d\r\n" % pseudoclock)
 
-            assert self.prawnblaster.readline().decode() == "ok\r\n"
+                assert self.prawnblaster.readline().decode() == "ok\r\n"
 
         return values
 
     def run_experiment(self):
+
+        self.start_event.wait()
+
         while True:
 
-            # time.sleep(0.12) # TODO: fix this hack...
             while True:
-                time.sleep(0.01)
+                time.sleep(0.001)
                 run_status, clock_status = self.read_status(True)
                 if run_status == 0:
                     break
@@ -260,12 +271,11 @@ class PrawnBlasterWorker(Worker):
             #print(msg, msg == b'exit')
 
             if msg == b'exit':
-                #print("BREAK")
                 return
 
             #print("Get next section")
             next_section = int(msg.split()[-1])
-            #print(f"Next section is {next_section}")
+            print(f"Next section is {next_section}")
 
             self.program_clock(next_section)
 
@@ -273,6 +283,7 @@ class PrawnBlasterWorker(Worker):
             msg = self.from_master_socket.recv() # load message
 
             self.start_run()
+            print(f"Start")
 
             #print(msg)
 
@@ -286,16 +297,18 @@ class PrawnBlasterWorker(Worker):
 
                 # Only program instructions that differ from what's in the smart cache:
                 if self.smart_cache[pseudoclock][i] != instruction:
-                    self.prawnblaster.write(
-                        b"set %d %d %d %d\r\n"
-                        % (
-                            pseudoclock,
-                            i,
-                            instruction["half_period"],
-                            instruction["reps"],
+                    
+                    with self.serial_lock:
+                        self.prawnblaster.write(
+                            b"set %d %d %d %d\r\n"
+                            % (
+                                pseudoclock,
+                                i,
+                                instruction["half_period"],
+                                instruction["reps"],
+                            )
                         )
-                    )
-                    response = self.prawnblaster.readline().decode()
+                        response = self.prawnblaster.readline().decode()
                     assert (
                         response == "ok\r\n"
                     ), f"PrawnBlaster said '{response}', expected 'ok'"
@@ -420,6 +433,7 @@ class PrawnBlasterWorker(Worker):
         self.h5_file = h5file  # store reference to h5 file for wait monitor
         self.current_wait = 0  # reset wait analysis
         self.started = False   # Prevent status check from detecting previous wait values
+        self.start_event.clear()
         #                        betwen now and when we actually send the start signal
         # fmt: on
 
@@ -439,8 +453,9 @@ class PrawnBlasterWorker(Worker):
         clock_frequency = self.device_properties["clock_frequency"]
 
         # Now set the clock details
-        self.prawnblaster.write(b"setclock %d %d\r\n" % (clock_mode, clock_frequency))
-        response = self.prawnblaster.readline().decode()
+        with self.serial_lock:
+            self.prawnblaster.write(b"setclock %d %d\r\n" % (clock_mode, clock_frequency))
+            response = self.prawnblaster.readline().decode()
         assert response == "ok\r\n", f"PrawnBlaster said '{response}', expected 'ok'"
 
         self.program_clock(0)
@@ -461,12 +476,14 @@ class PrawnBlasterWorker(Worker):
 
         # Start in software:
         self.logger.info("sending start")
-        self.prawnblaster.write(b"start\r\n")
-        response = self.prawnblaster.readline().decode()
+        with self.serial_lock:
+            self.prawnblaster.write(b"start\r\n")
+            response = self.prawnblaster.readline().decode()
         assert response == "ok\r\n", f"PrawnBlaster said '{response}', expected 'ok'"
 
         # set started = True
         self.started = True
+        self.start_event.set()
 
     def wait_for_trigger(self):
         """When used as a secondary pseudoclock, sets the PrawnBlaster
@@ -474,13 +491,14 @@ class PrawnBlasterWorker(Worker):
 
         # Set to wait for trigger:
         self.logger.info("sending hwstart")
-        self.prawnblaster.write(b"hwstart\r\n")
-        response = self.prawnblaster.readline().decode()
+        with self.serial_lock:
+            self.prawnblaster.write(b"hwstart\r\n")
+            response = self.prawnblaster.readline().decode()
         assert response == "ok\r\n", f"PrawnBlaster said '{response}', expected 'ok'"
 
         running = False
         while not running:
-            run_status, clock_status = self.read_status(True)
+            run_status, clock_status = self.read_status()
             # If we are running, great, the PrawnBlaster is waiting for a trigger
             if run_status == 2:
                 running = True
@@ -534,7 +552,7 @@ class PrawnBlasterWorker(Worker):
         if not self.is_master_pseudoclock:
             # Wait until shot completes
             while True:
-                run_status, clock_status = self.read_status(True)
+                run_status, clock_status = self.read_status()
                 if run_status == 0:
                     break
                 if run_status in [3, 4, 5]:
@@ -548,7 +566,8 @@ class PrawnBlasterWorker(Worker):
     def shutdown(self):
         """Cleanly shuts down the connection to the PrawnBlaster hardware."""
 
-        self.prawnblaster.close()
+        with self.serial_lock:
+            self.prawnblaster.close()
 
         self.socket.close()
         self.context.term()
@@ -563,10 +582,12 @@ class PrawnBlasterWorker(Worker):
             # Only need to send abort signal if we have told the PrawnBlaster to wait
             # for a hardware trigger. Otherwise it's just been programmed with
             # instructions and there is nothing we need to do to abort.
-            self.prawnblaster.write(b"abort\r\n")
-            assert self.prawnblaster.readline().decode() == "ok\r\n"
+            
+            with self.serial_lock:
+                self.prawnblaster.write(b"abort\r\n")
+                assert self.prawnblaster.readline().decode() == "ok\r\n"
             # loop until abort complete
-            while self.read_status(True)[0] != 5:
+            while self.read_status()[0] != 5:
                 time.sleep(0.5)
         return True
 
