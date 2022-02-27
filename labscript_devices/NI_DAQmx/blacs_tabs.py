@@ -13,6 +13,7 @@
 import labscript_utils.h5_lock
 import h5py
 from labscript_utils import dedent
+import json
 
 from blacs.device_base_class import DeviceTab
 from .utils import split_conn_AO, split_conn_DO
@@ -171,6 +172,7 @@ class NI_DAQmxTab(DeviceTab):
                 'Vmax': AO_base_max,
                 'num_AO': num_AO,
                 'ports': ports,
+                'devices': json.dumps([str(d) for d in self.settings["connection_table"].get_attached_devices().keys()]),
                 'clock_limit': clock_limit,
                 'clock_terminal': clock_terminal,
                 'clock_mirror_terminal': clock_mirror_terminal,

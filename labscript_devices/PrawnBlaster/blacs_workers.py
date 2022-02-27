@@ -20,10 +20,6 @@ import zmq
 import threading
 import numpy as np
 
-TMP_DEVICE_ADRESSES = {
-    "PrawnBlaster": 43555,
-    "NIOutput": 43556
-}
 
 class PrawnBlasterWorker(Worker):
     """The primary worker for the PrawnBlaster.
@@ -81,10 +77,6 @@ class PrawnBlasterWorker(Worker):
                 assert self.prawnblaster.readline().decode() == "ok\r\n"
                 self.prawnblaster.write(b"setinpin %d %d\r\n" % (i, in_pin))
                 assert self.prawnblaster.readline().decode() == "ok\r\n"
-
-        # self.context = zmq.Context()
-        # self.socket = self.context.socket(zmq.REQ)
-        # self.socket.connect(f"tcp://localhost:{TMP_DEVICE_ADRESSES['PrawnBlaster']}")
         
         self.context = zmq.Context()
         self.from_master_socket = self.context.socket(zmq.SUB)
@@ -253,39 +245,45 @@ class PrawnBlasterWorker(Worker):
 
         return values
 
-    def run_experiment(self):
+    def run_experiment(self, device_name):
 
         self.start_event.wait()
-
+        print("A")
         while True:
-
             while True:
                 time.sleep(0.001)
                 run_status, clock_status = self.read_status(True)
                 if run_status == 0:
                     break
 
-            self.to_master_socket.send(b"fin PrawnBlaster")
+            print("B")
+
+            self.to_master_socket.send(str.encode(f"fin {device_name}"))
+
+            print("C")
 
             msg = self.from_master_socket.recv() # load message
-            #print(msg, msg == b'exit')
+
+            print("D")
 
             if msg == b'exit':
                 return
 
-            #print("Get next section")
             next_section = int(msg.split()[-1])
             print(f"Next section is {next_section}")
 
             self.program_clock(next_section)
 
-            self.to_master_socket.send(b"rdy PrawnBlaster")
+            print("E")
+
+            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
             msg = self.from_master_socket.recv() # load message
 
-            self.start_run()
-            print(f"Start")
+            print("F")
 
-            #print(msg)
+            self.start_run()
+            print(f"Start {next_section}")
+
 
     def program_clock(self, section):
         # Program instructions
@@ -460,7 +458,7 @@ class PrawnBlasterWorker(Worker):
 
         self.program_clock(0)
 
-        self.run_thread = threading.Thread(target=self.run_experiment)
+        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
         self.run_thread.start()
 
 
@@ -569,7 +567,9 @@ class PrawnBlasterWorker(Worker):
         with self.serial_lock:
             self.prawnblaster.close()
 
-        self.socket.close()
+        self.from_master_socket.close()
+        self.to_master_socket.close()
+
         self.context.term()
 
     def abort_buffered(self):
