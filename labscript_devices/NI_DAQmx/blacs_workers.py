@@ -81,27 +81,25 @@ class NI_DAQmxJumpWorker(Worker):
 
         print("Run experiment")
         jump_counter = 0
+        self.from_master_socket.send(b"init")
 
         while True:
-            #print("Next block")
+
             start_time = time.perf_counter()
+
             # Wait for all devices to finish
             while True:
                 msg = self.to_master_socket.recv()
                 device = msg.split()[-1]
                 self.device_states[device] = FINISHED
-                print(f"Got {device}")
 
                 is_done = True
                 for dev in self.device_states:
                     if self.device_states[dev] != FINISHED:
                         is_done = False
-                        print(f"Waiting for {dev}")
                 if is_done:
                     break
-
-
-            print(f"A")
+            
             # Evaluate which section is next
             next_section = self.current_section + 1
             if self.sections[self.current_section]['jump']:
@@ -115,11 +113,8 @@ class NI_DAQmxJumpWorker(Worker):
 
             if next_section >= len(self.sections):
                 self.from_master_socket.send(b"exit")
-                # for dev in self.sockets:
-                #     self.sockets[dev].send(b"exit")
                 break # Shot finished
 
-            #print("section ", next_section)
             self.current_section = next_section
 
             print(f"load {next_section}")
@@ -142,11 +137,13 @@ class NI_DAQmxJumpWorker(Worker):
             # Send start signal
             self.from_master_socket.send(b"start")
 
-            for dev in self.device_states:
-                self.device_states[dev] = RUNNING
             finish_time = time.perf_counter()
             t = finish_time - start_time
             print(f"Loop took {t*1e6:.2f}us")
+
+            for dev in self.device_states:
+                self.device_states[dev] = RUNNING
+
         print("Finished experiment...")
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
@@ -191,11 +188,9 @@ class NI_DAQmxJumpWorker(Worker):
 
             self.sections.append(section)
 
-        print("Start jump thread")
         self.jump_thread = threading.Thread(target=self.run_experiment)
         self.jump_thread.start()
 
-        print(self.sections)
         return {}
 
 
@@ -515,13 +510,13 @@ class NI_DAQmxOutputWorker(Worker):
 
 
     def run_experiment(self, device_name):
-        print("RUN EXPERIMENT")
 
+        self.from_master_socket.recv()
         current_section = 0
+        # time.sleep(0.5) # TODO: remove. this is just needed for testing as we otherwise send the fin message too soon with emulated devices
 
         while True:
 
-            print("Await fin")
             if self.AO_task is not None:
                 self.AO_task.WaitUntilTaskDone(-1)
                 self.AO_task.StopTask()
@@ -531,17 +526,14 @@ class NI_DAQmxOutputWorker(Worker):
                 self.DO_task.WaitUntilTaskDone(-1)
                 self.DO_task.StopTask()
 
-            print("Send fin")
             self.to_master_socket.send(str.encode(f"fin {device_name}"))
 
             msg = self.from_master_socket.recv() # load message
-            # print(msg)
 
             if msg == b"exit":
                 break
             
             next_section = int(msg.split()[1])
-            # print(f"Next section is {next_section}")
             
             if current_section != next_section:
 
@@ -562,7 +554,6 @@ class NI_DAQmxOutputWorker(Worker):
 
             self.to_master_socket.send(str.encode(f"rdy {device_name}"))
             msg = self.from_master_socket.recv() # load message
-            # print(msg)
 
 
     def filter_data_by_time(self, time, values, min_time, max_time):
@@ -579,7 +570,6 @@ class NI_DAQmxOutputWorker(Worker):
         return np.array(return_values)
 
     def compile_sections(self, h5file, device_name):
-        print("Hello")
         # Get the data to be programmed into the output tasks:
         AO_table, DO_table, times_table = self.get_output_tables(h5file, device_name)
 
@@ -601,8 +591,6 @@ class NI_DAQmxOutputWorker(Worker):
         DO_final_values = {}
         AO_final_values = {}
         for i in range(len(timestamps)-1):
-
-            print(f"Generate section {i}")
 
             start = timestamps[i]
             end = timestamps[i+1]

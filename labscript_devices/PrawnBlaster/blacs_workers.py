@@ -247,8 +247,9 @@ class PrawnBlasterWorker(Worker):
 
     def run_experiment(self, device_name):
 
+        self.from_master_socket.recv()
+
         self.start_event.wait()
-        print("A")
         while True:
             while True:
                 time.sleep(0.001)
@@ -256,15 +257,9 @@ class PrawnBlasterWorker(Worker):
                 if run_status == 0:
                     break
 
-            print("B")
-
             self.to_master_socket.send(str.encode(f"fin {device_name}"))
 
-            print("C")
-
             msg = self.from_master_socket.recv() # load message
-
-            print("D")
 
             if msg == b'exit':
                 return
@@ -274,15 +269,10 @@ class PrawnBlasterWorker(Worker):
 
             self.program_clock(next_section)
 
-            print("E")
-
             self.to_master_socket.send(str.encode(f"rdy {device_name}"))
             msg = self.from_master_socket.recv() # load message
 
-            print("F")
-
             self.start_run()
-            print(f"Start {next_section}")
 
 
     def program_clock(self, section):
