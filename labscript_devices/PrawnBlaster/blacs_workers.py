@@ -204,7 +204,7 @@ class PrawnBlasterWorker(Worker):
         if (not Total) and (self.run_thread is not None):
             if self.run_thread.is_alive():
                 print("run_thread is alive. Dont check status")
-                return 2, 0 # TODO
+                return 2, 0
 
         with self.serial_lock:
             self.prawnblaster.write(b"status\r\n")
@@ -337,24 +337,24 @@ class PrawnBlasterWorker(Worker):
             self.is_master_pseudoclock = self.device_properties["is_master_pseudoclock"]
 
             # waits
-            # dataset = hdf5_file["waits"]
-            # acquisition_device = dataset.attrs["wait_monitor_acquisition_device"]
-            # timeout_device = dataset.attrs["wait_monitor_timeout_device"]
-            # if (
-            #     len(dataset) > 0
-            #     and acquisition_device
-            #     == "%s_internal_wait_monitor_outputs" % device_name
-            #     and timeout_device == "%s_internal_wait_monitor_outputs" % device_name
-            # ):
-            #     self.wait_table = dataset[:]
-            #     self.measured_waits = numpy.zeros(len(self.wait_table))
-            #     self.wait_timeout = numpy.zeros(len(self.wait_table), dtype=bool)
-            # else:
-            #     self.wait_table = (
-            #         None  # This device doesn't need to worry about looking at waits
-            #     )
-            #     self.measured_waits = None
-            #     self.wait_timeout = None
+            dataset = hdf5_file["waits"]
+            acquisition_device = dataset.attrs["wait_monitor_acquisition_device"]
+            timeout_device = dataset.attrs["wait_monitor_timeout_device"]
+            if (
+                len(dataset) > 0
+                and acquisition_device
+                == "%s_internal_wait_monitor_outputs" % device_name
+                and timeout_device == "%s_internal_wait_monitor_outputs" % device_name
+            ):
+                self.wait_table = dataset[:]
+                self.measured_waits = numpy.zeros(len(self.wait_table))
+                self.wait_timeout = numpy.zeros(len(self.wait_table), dtype=bool)
+            else:
+                self.wait_table = (
+                    None  # This device doesn't need to worry about looking at waits
+                )
+                self.measured_waits = None
+                self.wait_timeout = None
 
             jumps = hdf5_file['jumps'][:]
             end_time = hdf5_file['devices']['PB'].attrs['stop_time']
@@ -365,7 +365,7 @@ class PrawnBlasterWorker(Worker):
             timestamps.append(jumps[j]["to_time"])
 
         timestamps.append(0)
-        timestamps.append(end_time) # TODO: final time
+        timestamps.append(end_time)
 
         timestamps = sorted(set(timestamps))
 
