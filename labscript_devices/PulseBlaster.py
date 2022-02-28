@@ -390,7 +390,7 @@ class PulseBlaster(PseudoclockDevice):
             
         return freqdicts, ampdicts, phasedicts
         
-    def convert_to_pb_inst(self, dig_outputs, dds_outputs, freqs, amps, phases):
+    def convert_to_pb_inst(self, dig_outputs, dds_outputs, freqs, amps, phases, start=None, end=None):
         pb_inst = []
         
         # index to keep track of where in output.raw_output the
@@ -420,7 +420,25 @@ class PulseBlaster(PseudoclockDevice):
         j += 2
         
         flagstring = '0'*self.n_flags # So that this variable is still defined if the for loop has no iterations
+
+        t = 0
+
         for k, instruction in enumerate(self.pseudoclock.clock):
+            
+            inst_t = t
+
+            if instruction == 'WAIT':
+                t += 100e-9
+            else:
+                t += instruction['step'] * instruction['reps']
+
+            # Skip instructions that are not in this area
+            if (start is not None) and (inst_t < start):
+                continue
+            if (end is not None) and (inst_t > end):
+                continue
+                
+
             if instruction == 'WAIT':
                 # This is a wait instruction. Repeat the last instruction but with a 100ns delay and a WAIT op code:
                 wait_instruction = pb_inst[-1].copy()
@@ -581,7 +599,7 @@ class PulseBlaster(PseudoclockDevice):
             
         return pb_inst
         
-    def write_pb_inst_to_h5(self, pb_inst, hdf5_file):
+    def write_pb_inst_to_h5(self, pb_inst, hdf5_file, section=None):
         # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
         pb_dtype = [('freq0', np.int32), ('phase0', np.int32), ('amp0', np.int32), 
                     ('dds_en0', np.int32), ('phase_reset0', np.int32),
@@ -611,7 +629,11 @@ class PulseBlaster(PseudoclockDevice):
                                 
         # Okay now write it to the file: 
         group = hdf5_file['/devices/'+self.name]  
-        group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)   
+        if section == None:
+            group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)
+        else:
+            group.create_dataset(f'PULSE_PROGRAM_{section}', compression=config.compression,data = pb_inst_table)
+
         self.set_property('stop_time', self.stop_time, location='device_properties')
 
 

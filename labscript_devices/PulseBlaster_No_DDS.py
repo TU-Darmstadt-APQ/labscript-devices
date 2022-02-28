@@ -15,6 +15,8 @@ from labscript_devices import BLACS_tab, runviewer_parser
 from labscript_devices.PulseBlaster import PulseBlaster, PulseBlasterParser
 from labscript import PseudoclockDevice, config
 
+import zmq
+
 import numpy as np
 
 
@@ -26,7 +28,7 @@ class PulseBlaster_No_DDS(PulseBlaster):
     n_flags = 24
     core_clock_freq = 100 # MHz
     
-    def write_pb_inst_to_h5(self, pb_inst, hdf5_file):
+    def write_pb_inst_to_h5(self, pb_inst, hdf5_file, section=None):
         # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
         pb_dtype= [('flags',np.int32), ('inst',np.int32), ('inst_data',np.int32), ('length',np.float64)]
         pb_inst_table = np.empty(len(pb_inst),dtype = pb_dtype)
@@ -39,17 +41,32 @@ class PulseBlaster_No_DDS(PulseBlaster):
         
         # Okay now write it to the file: 
         group = hdf5_file['/devices/'+self.name]  
-        group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)         
-        self.set_property('stop_time', self.stop_time, location='device_properties')
+        if section == None:
+            group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)
+        else:
+            group.create_dataset(f'PULSE_PROGRAM_{section}', compression=config.compression,data = pb_inst_table)
+
+        self.set_property('stop_time', self.stop_time, location='device_properties', overwrite=True)
         
     def generate_code(self, hdf5_file):
-        # Generate the hardware instructions
+        # Generate the hardware instructions for each section
         self.init_device_group(hdf5_file)
         PseudoclockDevice.generate_code(self, hdf5_file)
         dig_outputs, ignore = self.get_direct_outputs()
-        pb_inst = self.convert_to_pb_inst(dig_outputs, [], {}, {}, {})
-        self._check_wait_monitor_ok()
-        self.write_pb_inst_to_h5(pb_inst, hdf5_file) 
+
+        print("jump_times", self.jump_times, "final", self.stop_time)
+        total_cut_times = self.jump_times.copy()
+        total_cut_times.append(0)
+        total_cut_times.append(self.stop_time)
+        total_cut_times = sorted(set(total_cut_times))
+
+        for i in range(len(total_cut_times)-1):
+            start = total_cut_times[i]
+            end = total_cut_times[i+1]
+
+            pb_inst = self.convert_to_pb_inst(dig_outputs, [], {}, {}, {}, start, end)
+            self._check_wait_monitor_ok()
+            self.write_pb_inst_to_h5(pb_inst, hdf5_file, i) 
         
 
 from blacs.tab_base_classes import Worker, define_state
@@ -259,6 +276,18 @@ class PulseblasterNoDDSWorker(Worker):
         self.time_based_shot_duration = None
         self.time_based_shot_end_time = None
 
+
+        self.context = zmq.Context()
+        self.from_master_socket = self.context.socket(zmq.SUB)
+        self.to_master_socket = self.context.socket(zmq.PUB)
+
+        self.from_master_socket.connect(f"tcp://localhost:44555")
+        self.to_master_socket.connect(f"tcp://localhost:44556")
+
+        self.from_master_socket.subscribe("")
+
+        self.sections = []
+
     def program_manual(self,values):
         # Program the DDS registers:
         
@@ -315,6 +344,12 @@ class PulseblasterNoDDSWorker(Worker):
             import time
             self.time_based_shot_end_time = time.time() + self.time_based_shot_duration
             
+    def run_experiment(self, device_name):
+        print("RUN")
+
+    def program_clock(self, section):
+        print("Hello")
+
     def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
         self.h5file = h5file
         if self.programming_scheme == 'pb_stop_programming/STOP':
@@ -471,6 +506,10 @@ class PulseblasterNoDDSWorker(Worker):
         
     def shutdown(self):
         #TODO: implement this
+        self.from_master_socket.close()
+        self.to_master_socket.close()
+
+        self.context.term()
         pass
         
 @runviewer_parser
