@@ -288,6 +288,7 @@ class PulseblasterNoDDSWorker(Worker):
         self.from_master_socket.subscribe("")
 
         self.sections = []
+        self.latest_values = {}
         
         self.run_thread = None
         self.start_event = threading.Event()
@@ -355,16 +356,21 @@ class PulseblasterNoDDSWorker(Worker):
     def run_experiment(self, device_name):
         self.from_master_socket.recv()
 
+        print("Wait1")
         self.start_event.wait()
         while True:
             while True:
+                print("Wait2")
                 time.sleep(0.001)
                 status, waits, clock_timer_over = self.check_status(True)
-                if status == 0:
+                print(status)
+                if status['waiting']: #TODO: waiting or done depends on programming type...
                     break
+            print("Send to master")
 
             self.to_master_socket.send(str.encode(f"fin {device_name}"))
 
+            print("Wait for master")
             msg = self.from_master_socket.recv() # load message
 
             if msg == b'exit':
@@ -379,6 +385,7 @@ class PulseblasterNoDDSWorker(Worker):
             msg = self.from_master_socket.recv() # load message
 
             self.start_run()
+            print("Start next run")
 
     def program_clock(self, section, initial_values = None, fresh=False):
 
@@ -387,9 +394,10 @@ class PulseblasterNoDDSWorker(Worker):
             pb_stop()
 
         pulse_program = self.sections[section]["pulse_program"]
+        flags,z,z,z = pulse_program[-1]
 
         if initial_values == None:
-            initial_values = self.smart_cache['initial_values']
+            initial_values = self.latest_values
 
         if fresh or (self.smart_cache['initial_values'] != initial_values) or \
             (len(self.smart_cache['pulse_program']) != len(pulse_program)) or \
@@ -453,7 +461,14 @@ class PulseblasterNoDDSWorker(Worker):
             # even if no programming occurred due to smart programming:
             pb_start_programming(PULSE_PROGRAM)
 
-    def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
+        return_values = {}
+        # Since we are converting from an integer to a binary string, we need to reverse the string! (see notes above when we create flags variables)
+        return_flags = str(bin(flags)[2:]).rjust(self.num_DO,'0')[::-1]
+        for i in range(self.num_DO):
+            return_values['flag %d'%i] = return_flags[i]
+        self.latest_values = return_values
+
+    def transition_to_buffered(self,device_name,h5file,initial_values,fresh,connection):
         self.h5file = h5file
         
         self.start_event.clear()
@@ -468,15 +483,15 @@ class PulseblasterNoDDSWorker(Worker):
                 section_group = group[s_group]
 
                 # Is this shot using the fixed-duration workaround instead of checking the PulseBlaster's status?
-                time_based_stop_workaround = section_group.attrs.get('time_based_stop_workaround', False)
+                time_based_stop_workaround = group.attrs.get('time_based_stop_workaround', False)
                 if time_based_stop_workaround:
-                    time_based_shot_duration = (section_group.attrs['stop_time']
+                    time_based_shot_duration = (group.attrs['stop_time']
                                                     + hdf5_file['waits'][:]['timeout'].sum()
-                                                    + section_group.attrs['time_based_stop_workaround_extra_time'])
+                                                    + group.attrs['time_based_stop_workaround_extra_time'])
                     raise Exception("Using unsupported feature for jumps!")
 
                 # Now for the pulse program:
-                pulse_program = section_group['PULSE_PROGRAM'][2:]
+                pulse_program = section_group[2:]
 
                 #Let's get the final state of the pulseblaster. z's are the args we don't need:
                 flags,z,z,z = pulse_program[-1]
@@ -515,8 +530,14 @@ class PulseblasterNoDDSWorker(Worker):
             return return_values
             
     def check_status(self, force=False):
-        if self.run_thread.is_alive() and not force:
-            return 1, self.waits_pending, False # TODO: check
+        if (self.run_thread is not None) and self.run_thread.is_alive() and not force:
+            return {
+                "stopped": False,
+                "reset": False,
+                "running": True,
+                "waiting": False,
+                "scanning": False
+            }, self.waits_pending, False # TODO: check
 
         if self.waits_pending:
             try:
