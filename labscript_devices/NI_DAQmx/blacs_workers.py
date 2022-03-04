@@ -389,9 +389,9 @@ class NI_DAQmxOutputWorker(Worker):
         for i in range(num_DO):
             do_write_data[:,i] = (DO_table & (1 << i)) >> i
 
-        if self.DO_task is not None:
-            self.DO_task.StopTask()
-            self.DO_task.ClearTask()
+        # if self.DO_task is not None:
+        #     self.DO_task.StopTask()
+        #     self.DO_task.ClearTask()
         self.DO_task = Task()
         do_read = int32()
         self.DO_task.CreateDOChan(self.do_channels,"",DAQmx_Val_ChanPerLine)
