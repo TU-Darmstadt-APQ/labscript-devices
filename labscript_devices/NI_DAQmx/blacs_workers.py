@@ -96,6 +96,7 @@ class NI_DAQmxJumpWorker(Worker):
                 is_done = True
                 for dev in self.device_states:
                     if self.device_states[dev] != FINISHED:
+                        print(f"Waiting for {dev}")
                         is_done = False
                 if is_done:
                     break
@@ -156,6 +157,7 @@ class NI_DAQmxJumpWorker(Worker):
 
         with h5py.File(h5file, 'r') as hdf5_file:
             jumps = hdf5_file['jumps'][:]
+            # TODO: read stop time from master clock not necessarily "PB"
             end_time = hdf5_file['devices']['PB'].attrs['stop_time']
             
         timestamps = []
@@ -368,79 +370,142 @@ class NI_DAQmxOutputWorker(Worker):
         dictionary of the final values of each channel in use"""
         if DO_table is None:
             return {}
+        # self.DO_task = Task()
+        # written = int32()
+        # ports = DO_table.dtype.names
+
+        # Expand each bitfield int into self.num['num_DO']
+        # individual ones and zeros:
+
+        num_DO = 0
+        port_offset = {}
+        for port_name in self.ports:
+                port = self.ports[port_name]
+                if port['supports_buffered']:
+                    port_offset[port_name] = num_DO
+                    num_DO += port['num_lines']
+
+        do_write_data = np.zeros((DO_table.shape[0], num_DO),dtype=np.uint8)
+        for i in range(num_DO):
+            do_write_data[:,i] = (DO_table & (1 << i)) >> i
+
+        if self.DO_task is not None:
+            self.DO_task.StopTask()
+            self.DO_task.ClearTask()
         self.DO_task = Task()
-        written = int32()
-        ports = DO_table.dtype.names
-
-        final_values = {}
-        for port_str in ports:
-            # Add each port to the task:
-            con = '%s/%s' % (self.MAX_name, port_str)
-            self.DO_task.CreateDOChan(con, "", DAQmx_Val_ChanForAllLines)
-
-            # Collect the final values of the lines on this port:
-            port_final_value = DO_table[port_str][-1]
-            for line in range(self.ports[port_str]["num_lines"]):
-                # Extract each digital value from the packed bits:
-                line_final_value = bool((1 << line) & port_final_value)
-                final_values['%s/line%d' % (port_str, line)] = int(line_final_value)
-
-        # Convert DO table to a regular array and ensure it is C continguous:
-        DO_table = np.ascontiguousarray(
-            structured_to_unstructured(DO_table, dtype=np.uint32)
-        )
-
-        # Check if DOs are all zero for the whole shot. If they are this triggers a
-        # bug in NI-DAQmx that throws a cryptic error for buffered output. In this
-        # case, run it as a non-buffered task.
+        do_read = int32()
+        self.DO_task.CreateDOChan(self.do_channels,"",DAQmx_Val_ChanPerLine)
+        
         self.DO_all_zero = not np.any(DO_table)
         if self.DO_all_zero:
             DO_table = DO_table[0:1]
-
         if self.static_DO or self.DO_all_zero:
-            # Static DO. Start the task and write data, no timing configuration.
             self.DO_task.StartTask()
-            # Write data. See the comment in self.program_manual as to why we are using
-            # uint32 instead of the native size of each port
-            self.DO_task.WriteDigitalU32(
-                1,  # npts
-                False,  # autostart
-                10.0,  # timeout
-                DAQmx_Val_GroupByScanNumber,
-                DO_table,
-                written,
-                None,
-            )
+            self.DO_task.WriteDigitalLines(1,True,10.0,DAQmx_Val_GroupByChannel,do_write_data,do_read,None)
         else:
-            # We use all but the last sample (which is identical to the second last
-            # sample) in order to ensure there is one more clock tick than there are
-            # samples. This is required by some devices to determine that the task has
-            # completed.
-            npts = len(DO_table) - 1
+            # We use all but the last sample (which is identical to the
+            # second last sample) in order to ensure there is one more
+            # clock tick than there are samples. The 6733 requires this
+            # to determine that the task has completed.
 
+            do_write_data = do_write_data[:-1,:]
             # Set up timing:
             self.DO_task.CfgSampClkTiming(
                 self.clock_terminal,
                 self.clock_limit,
                 DAQmx_Val_Rising,
                 DAQmx_Val_FiniteSamps,
-                npts,
+                do_write_data.shape[0],
             )
-
-            # Write data. See the comment in self.program_manual as to why we are using
-            # uint32 instead of the native size of each port.
-            self.DO_task.WriteDigitalU32(
-                npts,
-                False,  # autostart
-                10.0,  # timeout
-                DAQmx_Val_GroupByScanNumber,
-                DO_table[:-1], # All but the last sample as mentioned above
-                written,
-                None,
-            )
-
-            # Go!
+            
+            self.DO_task.WriteDigitalLines(
+                            do_write_data.shape[0],
+                            False,
+                            10.0,
+                            DAQmx_Val_GroupByScanNumber,
+                            do_write_data,
+                            do_read,
+                            None)
             self.DO_task.StartTask()
+
+        final_values = {}
+        # TODO: final values...
+        # k = 0
+        # for i in range(self.num['num_ports_DO']):
+        #     for j in range(self.num['num_DO']//self.num['num_ports_DO']):
+        #         final_values['port%d/line%d'%(i,j)] = do_write_data[-1,k]
+        #         k += 1
+
+
+        # final_values = {}
+        # for port_str in ports:
+        #     # Add each port to the task:
+        #     con = '%s/%s' % (self.MAX_name, port_str)
+        #     self.DO_task.CreateDOChan(con, "", DAQmx_Val_ChanForAllLines)
+
+        #     # Collect the final values of the lines on this port:
+        #     port_final_value = DO_table[port_str][-1]
+        #     for line in range(self.ports[port_str]["num_lines"]):
+        #         # Extract each digital value from the packed bits:
+        #         line_final_value = bool((1 << line) & port_final_value)
+        #         final_values['%s/line%d' % (port_str, line)] = int(line_final_value)
+
+        # # Convert DO table to a regular array and ensure it is C continguous:
+        # DO_table = np.ascontiguousarray(
+        #     structured_to_unstructured(DO_table, dtype=np.uint32)
+        # )
+
+        # # Check if DOs are all zero for the whole shot. If they are this triggers a
+        # # bug in NI-DAQmx that throws a cryptic error for buffered output. In this
+        # # case, run it as a non-buffered task.
+        # self.DO_all_zero = not np.any(DO_table)
+        # if self.DO_all_zero:
+        #     DO_table = DO_table[0:1]
+
+        # if self.static_DO or self.DO_all_zero:
+        #     # Static DO. Start the task and write data, no timing configuration.
+        #     self.DO_task.StartTask()
+        #     # Write data. See the comment in self.program_manual as to why we are using
+        #     # uint32 instead of the native size of each port
+        #     self.DO_task.WriteDigitalU32(
+        #         1,  # npts
+        #         False,  # autostart
+        #         10.0,  # timeout
+        #         DAQmx_Val_GroupByScanNumber,
+        #         DO_table,
+        #         written,
+        #         None,
+        #     )
+        # else:
+        #     # We use all but the last sample (which is identical to the second last
+        #     # sample) in order to ensure there is one more clock tick than there are
+        #     # samples. This is required by some devices to determine that the task has
+        #     # completed.
+        #     npts = len(DO_table) - 1
+
+        #     # Set up timing:
+        #     self.DO_task.CfgSampClkTiming(
+        #         self.clock_terminal,
+        #         self.clock_limit,
+        #         DAQmx_Val_Rising,
+        #         DAQmx_Val_FiniteSamps,
+        #         npts,
+        #     )
+
+        #     # Write data. See the comment in self.program_manual as to why we are using
+        #     # uint32 instead of the native size of each port.
+        #     self.DO_task.WriteDigitalU32(
+        #         npts,
+        #         False,  # autostart
+        #         10.0,  # timeout
+        #         DAQmx_Val_GroupByScanNumber,
+        #         DO_table[:-1], # All but the last sample as mentioned above
+        #         written,
+        #         None,
+        #     )
+
+        #     # Go!
+        #     self.DO_task.StartTask()
 
         return final_values
 
@@ -576,6 +641,7 @@ class NI_DAQmxOutputWorker(Worker):
         with h5py.File(h5file, 'r') as hdf5_file:
             jumps = hdf5_file['jumps'][:]
             end_time = hdf5_file['devices']['PB'].attrs['stop_time']
+            self.do_channels = hdf5_file['devices'][device_name].attrs['digital_lines']
             
         timestamps = []
         for j in range(len(jumps)):
@@ -608,8 +674,8 @@ class NI_DAQmxOutputWorker(Worker):
 
             if section['AO_values'] is not None:
                 AO_final_values = dict(zip(section['AO_values'].dtype.names, section['AO_values'][-1]))
-            if section['DO_values'] is not None:
-                DO_final_values = dict(zip(section['DO_values'].dtype.names, section['DO_values'][-1]))
+            # if section['DO_values'] is not None: TODO
+            #     DO_final_values = dict(zip(section['DO_values'].dtype.names, section['DO_values'][-1]))
 
             self.sections.append(section)
 
