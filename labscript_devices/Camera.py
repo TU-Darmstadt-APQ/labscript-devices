@@ -109,8 +109,8 @@ class Camera(TriggerableDevice):
 
         group = self.init_device_group(hdf5_file)
 
-        if self.exposures:
-            group.create_dataset('EXPOSURES', data=data)
+        #if self.exposures:
+        group.create_dataset('EXPOSURES', data=data)
             
         # DEPRECATED backward campatibility for use of exposuretime keyword argument instead of exposure_time:
         self.set_property('exposure_time', self.exposure_time, location='device_properties', overwrite=True)
@@ -234,7 +234,7 @@ class CameraWorker(Worker):
         else:
             raise Exception('invalid response from server: ' + response)
     
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, com):
         h5file = shared_drive.path_to_agnostic(h5file)
         if not self.use_zmq:
             return self.transition_to_buffered_sockets(h5file,self.host, self.port)
