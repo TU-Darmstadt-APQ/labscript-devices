@@ -82,8 +82,8 @@ class PrawnBlasterWorker(Worker):
         self.from_master_socket = self.context.socket(zmq.SUB)
         self.to_master_socket = self.context.socket(zmq.PUB)
 
-        self.from_master_socket.connect(f"tcp://localhost:44555")
-        self.to_master_socket.connect(f"tcp://localhost:44556")
+        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
+        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
 
         self.from_master_socket.subscribe("")
 
@@ -400,7 +400,7 @@ class PrawnBlasterWorker(Worker):
             self.sections.append(section)
 
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         print("Transition to buffered")
         """Configures the PrawnBlaster for buffered execution.
 

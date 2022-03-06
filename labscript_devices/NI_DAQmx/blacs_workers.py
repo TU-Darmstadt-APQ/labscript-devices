@@ -148,7 +148,7 @@ class NI_DAQmxJumpWorker(Worker):
 
         print("Finished experiment...")
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
 
         self.current_section = 0
         self.total_past_t = 0
@@ -167,7 +167,7 @@ class NI_DAQmxJumpWorker(Worker):
             timestamps.append(jumps[j]["to_time"])
 
         timestamps.append(0)
-        timestamps.append(end_time) # TODO: final time
+        timestamps.append(end_time)
 
         timestamps = sorted(set(timestamps))
 
@@ -228,8 +228,8 @@ class NI_DAQmxOutputWorker(Worker):
         self.from_master_socket = self.context.socket(zmq.SUB)
         self.to_master_socket = self.context.socket(zmq.PUB)
 
-        self.from_master_socket.connect(f"tcp://localhost:44555")
-        self.to_master_socket.connect(f"tcp://localhost:44556")
+        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
+        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
         
         self.from_master_socket.subscribe("")
 
@@ -431,82 +431,6 @@ class NI_DAQmxOutputWorker(Worker):
 
         final_values = {}
         # TODO: final values...
-        # k = 0
-        # for i in range(self.num['num_ports_DO']):
-        #     for j in range(self.num['num_DO']//self.num['num_ports_DO']):
-        #         final_values['port%d/line%d'%(i,j)] = do_write_data[-1,k]
-        #         k += 1
-
-
-        # final_values = {}
-        # for port_str in ports:
-        #     # Add each port to the task:
-        #     con = '%s/%s' % (self.MAX_name, port_str)
-        #     self.DO_task.CreateDOChan(con, "", DAQmx_Val_ChanForAllLines)
-
-        #     # Collect the final values of the lines on this port:
-        #     port_final_value = DO_table[port_str][-1]
-        #     for line in range(self.ports[port_str]["num_lines"]):
-        #         # Extract each digital value from the packed bits:
-        #         line_final_value = bool((1 << line) & port_final_value)
-        #         final_values['%s/line%d' % (port_str, line)] = int(line_final_value)
-
-        # # Convert DO table to a regular array and ensure it is C continguous:
-        # DO_table = np.ascontiguousarray(
-        #     structured_to_unstructured(DO_table, dtype=np.uint32)
-        # )
-
-        # # Check if DOs are all zero for the whole shot. If they are this triggers a
-        # # bug in NI-DAQmx that throws a cryptic error for buffered output. In this
-        # # case, run it as a non-buffered task.
-        # self.DO_all_zero = not np.any(DO_table)
-        # if self.DO_all_zero:
-        #     DO_table = DO_table[0:1]
-
-        # if self.static_DO or self.DO_all_zero:
-        #     # Static DO. Start the task and write data, no timing configuration.
-        #     self.DO_task.StartTask()
-        #     # Write data. See the comment in self.program_manual as to why we are using
-        #     # uint32 instead of the native size of each port
-        #     self.DO_task.WriteDigitalU32(
-        #         1,  # npts
-        #         False,  # autostart
-        #         10.0,  # timeout
-        #         DAQmx_Val_GroupByScanNumber,
-        #         DO_table,
-        #         written,
-        #         None,
-        #     )
-        # else:
-        #     # We use all but the last sample (which is identical to the second last
-        #     # sample) in order to ensure there is one more clock tick than there are
-        #     # samples. This is required by some devices to determine that the task has
-        #     # completed.
-        #     npts = len(DO_table) - 1
-
-        #     # Set up timing:
-        #     self.DO_task.CfgSampClkTiming(
-        #         self.clock_terminal,
-        #         self.clock_limit,
-        #         DAQmx_Val_Rising,
-        #         DAQmx_Val_FiniteSamps,
-        #         npts,
-        #     )
-
-        #     # Write data. See the comment in self.program_manual as to why we are using
-        #     # uint32 instead of the native size of each port.
-        #     self.DO_task.WriteDigitalU32(
-        #         npts,
-        #         False,  # autostart
-        #         10.0,  # timeout
-        #         DAQmx_Val_GroupByScanNumber,
-        #         DO_table[:-1], # All but the last sample as mentioned above
-        #         written,
-        #         None,
-        #     )
-
-        #     # Go!
-        #     self.DO_task.StartTask()
 
         return final_values
 
@@ -643,6 +567,7 @@ class NI_DAQmxOutputWorker(Worker):
             master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
             end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
             self.do_channels = hdf5_file['devices'][device_name].attrs['digital_lines']
+            self.jump_address = hdf5_file['jumps'].attrs['jump_device_address']
             
         timestamps = []
         for j in range(len(jumps)):
@@ -684,7 +609,7 @@ class NI_DAQmxOutputWorker(Worker):
         return DO_final_values, AO_final_values
 
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         # Store the initial values in case we have to abort and restore them:
         self.initial_values = initial_values
 
@@ -907,7 +832,7 @@ class NI_DAQmxAcquisitionWorker(Worker):
             self.task = None
             self.read_array = None
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         self.logger.debug('transition_to_buffered')
 
         # read channels, acquisition rate, etc from H5 file
@@ -1263,7 +1188,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                 1, True, 1, DAQmx_Val_GroupByChannel, self.timeout_rearm, written, None
             )
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, intercom):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         self.logger.debug('transition_to_buffered')
         self.h5_file = h5file
         with h5py.File(h5file, 'r') as hdf5_file:

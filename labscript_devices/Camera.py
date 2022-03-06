@@ -166,7 +166,10 @@ class CameraTab(DeviceTab):
             self.update_settings_and_check_connectivity()
             
     def initialise_workers(self):
-        worker_initialisation_kwargs = {'port': self.ui.port_label.text()}
+        worker_initialisation_kwargs = {
+            'port': self.ui.port_label.text(),
+            'jump_address': str(self.settings['connection_table'].jump_device_address),
+        }
         self.create_worker("main_worker", CameraWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
         self.update_settings_and_check_connectivity()
@@ -215,7 +218,10 @@ class CameraWorker(Worker):
         else:
             response = zprocess.zmq_get_string(self.port, self.host, data='hello')
             if response == 'hello':
-                return True
+                
+                response = zprocess.zmq_get_string(self.port, self.host, data=f'con {self.jump_address}')
+                if response == 'ok':
+                    return True
             else:
                 raise Exception('invalid response from server: ' + str(response))
                 
@@ -234,7 +240,7 @@ class CameraWorker(Worker):
         else:
             raise Exception('invalid response from server: ' + response)
     
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh, com):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         h5file = shared_drive.path_to_agnostic(h5file)
         if not self.use_zmq:
             return self.transition_to_buffered_sockets(h5file,self.host, self.port)

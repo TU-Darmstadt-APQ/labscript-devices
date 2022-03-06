@@ -99,6 +99,7 @@ class PrawnBlasterTab(DeviceTab):
         )
 
         worker_initialisation_kwargs = {
+            "jump_address": str(self.settings["connection_table"].jump_device_address),
             "com_port": com_port,
             "num_pseudoclocks": self.connection_table_properties["num_pseudoclocks"],
             "out_pins": self.connection_table_properties["out_pins"],

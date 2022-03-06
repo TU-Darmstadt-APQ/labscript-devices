@@ -147,6 +147,7 @@ class NI_DAQmxTab(DeviceTab):
             'labscript_devices.NI_DAQmx.blacs_workers.NI_DAQmxOutputWorker',
             {
                 'MAX_name': self.MAX_name,
+                'jump_address': str(self.settings['connection_table'].jump_device_address),
                 'Vmin': AO_base_min,
                 'Vmax': AO_base_max,
                 'num_AO': num_AO,
@@ -171,6 +172,7 @@ class NI_DAQmxTab(DeviceTab):
                 'labscript_devices.NI_DAQmx.blacs_workers.NI_DAQmxJumpWorker',
                 {
                     'MAX_name': self.MAX_name,
+                    'jump_address': str(self.settings['connection_table'].jump_device_address),
                     'Vmin': AO_base_min,
                     'Vmax': AO_base_max,
                     'num_AO': num_AO,
@@ -206,6 +208,7 @@ class NI_DAQmxTab(DeviceTab):
                 'labscript_devices.NI_DAQmx.blacs_workers.NI_DAQmxWaitMonitorWorker',
                 {
                     'MAX_name': self.MAX_name,
+                    'jump_address': str(self.settings['connection_table'].jump_device_address),
                     'wait_acq_connection': wait_acq_connection,
                     'wait_timeout_MAX_name': wait_timeout_MAX_name,
                     'wait_timeout_connection': wait_timeout_connection,
@@ -226,6 +229,7 @@ class NI_DAQmxTab(DeviceTab):
                 'labscript_devices.NI_DAQmx.blacs_workers.NI_DAQmxAcquisitionWorker',
                 {
                     'MAX_name': self.MAX_name,
+                    'jump_address': str(self.settings['connection_table'].jump_device_address),
                     'num_AI': num_AI,
                     'AI_chans': AI_chans,
                     'AI_term': properties['AI_term'],

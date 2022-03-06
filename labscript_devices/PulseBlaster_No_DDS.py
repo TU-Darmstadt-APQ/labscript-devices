@@ -123,6 +123,7 @@ class Pulseblaster_No_DDS_Tab(DeviceTab):
         # Create and set the primary worker
         self.create_worker("main_worker",self.device_worker_class,{'board_number':self.board_number,
                                                                    'num_DO': self.num_DO,
+                                                                   'jump_address': str(self.settings['connection_table'].jump_device_address),
                                                                    'programming_scheme': self.programming_scheme})
         self.primary_worker = "main_worker"
         
@@ -282,8 +283,8 @@ class PulseblasterNoDDSWorker(Worker):
         self.from_master_socket = self.context.socket(zmq.SUB)
         self.to_master_socket = self.context.socket(zmq.PUB)
 
-        self.from_master_socket.connect(f"tcp://localhost:44555")
-        self.to_master_socket.connect(f"tcp://localhost:44556")
+        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
+        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
 
         self.from_master_socket.subscribe("")
 
@@ -468,7 +469,7 @@ class PulseblasterNoDDSWorker(Worker):
             return_values['flag %d'%i] = return_flags[i]
         self.latest_values = return_values
 
-    def transition_to_buffered(self,device_name,h5file,initial_values,fresh,connection):
+    def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
         self.h5file = h5file
         
         self.start_event.clear()
@@ -477,6 +478,7 @@ class PulseblasterNoDDSWorker(Worker):
         with h5py.File(h5file,'r') as hdf5_file:
             group = hdf5_file['devices/%s'%device_name]
 
+            self.jump_address = hdf5_file['jumps'].attrs['jump_device_address']
             for s_group in group.keys():
                 if 'PULSE_PROGRAM_' not in s_group:
                     continue
