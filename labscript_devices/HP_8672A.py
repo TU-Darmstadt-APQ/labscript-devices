@@ -4,6 +4,7 @@ from labscript_utils.shared_drive import path_to_local
 import numpy as np
 import labscript_utils.h5_lock
 import h5py
+import threading
 
 # The synthesizer is capable to adjust the output amplitude via LevelRange.
 # To prevent damage to attached devices, this feature is disabled by default.
@@ -277,7 +278,13 @@ class HP_8672ATab(DeviceTab):
             self.delay_ramping_counter = 0  # reset ramping delay counter if a shot ends, to prevent back ramping in a shot qequence
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address, 'igor_address': self.igor_address, 'igor_port': self.igor_port, 'send_to_igor': self.send_to_igor}
+        worker_initialisation_kwargs = {
+            'GPIB_address': self.GPIB_address, 
+            'igor_address': self.igor_address, 
+            'igor_port': self.igor_port, 
+            'send_to_igor': self.send_to_igor,
+            'jump_address': str(self.settings['connection_table'].jump_device_address),
+        }
         self.create_worker("main_worker", HP_8672AWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
@@ -421,6 +428,21 @@ class HP_8672AWorker(GPIBWorker):
 
         return {}  # no need to adjust the values
 
+
+    def run_experiment(self, device_name):
+        self.from_master_socket.recv()
+        while True:
+
+            self.to_master_socket.send(str.encode(f"fin {device_name}"))
+            msg = self.from_master_socket.recv() # load message
+
+            if msg == b'exit':
+                return
+
+            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
+            msg = self.from_master_socket.recv() # load message
+
+
     def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
         # for remote worker to find correct find path:
         if getattr(self, 'is_remote', False):
@@ -442,6 +464,10 @@ class HP_8672AWorker(GPIBWorker):
         self.send_GPIB_frequency(frequency, level_range)
         if self.send_to_igor:
             self.send_igor_frequency(frequency)
+
+        # start run thread
+        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
+        self.run_thread.start()
 
         if level_range:
             return {'frequency': frequency / 1e6, 'range': level_range}  # final values, in MHz

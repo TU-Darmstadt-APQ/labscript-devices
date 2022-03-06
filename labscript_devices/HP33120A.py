@@ -5,6 +5,7 @@ from qtutils.qt.QtWidgets import QWidget, QLineEdit
 from labscript_utils.qtwidgets.toolpalette import ToolPaletteGroup
 import numpy as np
 import pyqtgraph as pg
+import threading
 MIN_FREQUENCY = 1  # in Hz
 MAX_FREQUENCY = 150000000  # in Hz
 MIN_VOLTAGE = 0.05  # in V
@@ -181,7 +182,10 @@ class HP33120A_Tab(DeviceTab):
         DeviceTab.transition_to_manual(self, notify_queue, program)
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address}
+        worker_initialisation_kwargs = {
+            'GPIB_address': self.GPIB_address,
+            'jump_address': str(self.settings['connection_table'].jump_device_address),
+        }
         self.create_worker("main_worker", HP33120A_Worker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
@@ -256,6 +260,21 @@ class HP33120A_Worker(GPIBWorker):
             self.GPIB_connection.write("FUNC:SHAPE USER")
             self.wave = waveform
 
+
+    def run_experiment(self, device_name):
+        self.from_master_socket.recv()
+        while True:
+
+            self.to_master_socket.send(str.encode(f"fin {device_name}"))
+            msg = self.from_master_socket.recv() # load message
+
+            if msg == b'exit':
+                return
+
+            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
+            msg = self.from_master_socket.recv() # load message
+
+
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         frequency = initial_values['frequency']
         amplitude = initial_values['amplitude']
@@ -272,6 +291,10 @@ class HP33120A_Worker(GPIBWorker):
 
         self.send_GPIB_settings(frequency, amplitude, offset, ext_trigger)
         self.setWaveForm(wave)
+
+        # start run thread
+        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
+        self.run_thread.start()
 
         return {'frequency': float(frequency), 'amplitude': float(amplitude), 'offset': float(offset)}
 
