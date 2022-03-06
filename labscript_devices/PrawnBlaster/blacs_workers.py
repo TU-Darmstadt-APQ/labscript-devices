@@ -357,7 +357,8 @@ class PrawnBlasterWorker(Worker):
                 self.wait_timeout = None
 
             jumps = hdf5_file['jumps'][:]
-            end_time = hdf5_file['devices']['PB'].attrs['stop_time']
+            master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
+            end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
             
         timestamps = []
         for j in range(len(jumps)):

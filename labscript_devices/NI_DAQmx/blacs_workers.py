@@ -97,6 +97,7 @@ class NI_DAQmxJumpWorker(Worker):
                 for dev in self.device_states:
                     if self.device_states[dev] != FINISHED:
                         is_done = False
+                        print(f"Waiting for {dev}")
                 if is_done:
                     break
             
@@ -156,7 +157,8 @@ class NI_DAQmxJumpWorker(Worker):
 
         with h5py.File(h5file, 'r') as hdf5_file:
             jumps = hdf5_file['jumps'][:]
-            end_time = hdf5_file['devices']['PB'].attrs['stop_time']
+            master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
+            end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
             
         timestamps = []
         for j in range(len(jumps)):
@@ -513,7 +515,6 @@ class NI_DAQmxOutputWorker(Worker):
 
         self.from_master_socket.recv()
         current_section = 0
-        # time.sleep(0.5) # TODO: remove. this is just needed for testing as we otherwise send the fin message too soon with emulated devices
 
         while True:
 
@@ -575,7 +576,8 @@ class NI_DAQmxOutputWorker(Worker):
 
         with h5py.File(h5file, 'r') as hdf5_file:
             jumps = hdf5_file['jumps'][:]
-            end_time = hdf5_file['devices']['PB'].attrs['stop_time']
+            master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
+            end_time = hdf5_file['devices'][master_clock].attrs['stop_time'] # TODO: change to master clock
             
         timestamps = []
         for j in range(len(jumps)):
