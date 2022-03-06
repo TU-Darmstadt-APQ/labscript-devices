@@ -445,12 +445,12 @@ class PulseBlaster(PseudoclockDevice):
 
             if instruction == 'WAIT':
                 # This is a wait instruction. Repeat the last instruction but with a 100ns delay and a WAIT op code:
-                # wait_instruction = pb_inst[-1].copy()
-                # wait_instruction['delay'] = 100
-                # wait_instruction['instruction'] = 'WAIT'
-                # wait_instruction['data'] = 0
-                # pb_inst.append(wait_instruction)
-                # j += 1
+                wait_instruction = pb_inst[-1].copy()
+                wait_instruction['delay'] = 100
+                wait_instruction['instruction'] = 'WAIT'
+                wait_instruction['data'] = 0
+                pb_inst.append(wait_instruction)
+                j += 1
                 continue
                 
             flags = [0]*self.n_flags
