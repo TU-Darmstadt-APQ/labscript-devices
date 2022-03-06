@@ -436,7 +436,7 @@ class PulseBlaster(PseudoclockDevice):
                 t += instruction['step'] * instruction['reps']
 
             # Skip instructions that are not in this area
-            if (start is not None) and (start != 0) and (instruction['start'] <= start):
+            if (start is not None) and (start != 0) and (instruction['start'] < start):
                 continue
             if (end is not None) and (instruction['start'] > end+0.0001):
                 continue

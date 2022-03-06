@@ -478,7 +478,6 @@ class PulseblasterNoDDSWorker(Worker):
         with h5py.File(h5file,'r') as hdf5_file:
             group = hdf5_file['devices/%s'%device_name]
 
-            self.jump_address = hdf5_file['jumps'].attrs['jump_device_address']
             for s_group in group.keys():
                 if 'PULSE_PROGRAM_' not in s_group:
                     continue
@@ -498,18 +497,16 @@ class PulseblasterNoDDSWorker(Worker):
                 #Let's get the final state of the pulseblaster. z's are the args we don't need:
                 flags,z,z,z = pulse_program[-1]
                 
-                
-                # TODO!!!
-                # # Are there waits in use in this experiment? The monitor waiting for the end
-                # # of the experiment will need to know:
-                # wait_monitor_exists = bool(hdf5_file['waits'].attrs['wait_monitor_acquisition_device'])
-                # waits_in_use = bool(len(hdf5_file['waits']))
-                # self.waits_pending = wait_monitor_exists and waits_in_use
-                # if waits_in_use and not wait_monitor_exists:
-                #     # This should be caught during labscript compilation, but just in case.
-                #     # having waits but not a wait monitor means we can't tell when the shot
-                #     # is over unless the shot ends in a STOP instruction:
-                #     assert self.programming_scheme == 'pb_stop_programming/STOP'
+                # Are there waits in use in this experiment? The monitor waiting for the end
+                # of the experiment will need to know:
+                wait_monitor_exists = bool(hdf5_file['waits'].attrs['wait_monitor_acquisition_device'])
+                waits_in_use = bool(len(hdf5_file['waits']))
+                self.waits_pending = wait_monitor_exists and waits_in_use
+                if waits_in_use and not wait_monitor_exists:
+                    # This should be caught during labscript compilation, but just in case.
+                    # having waits but not a wait monitor means we can't tell when the shot
+                    # is over unless the shot ends in a STOP instruction:
+                    assert self.programming_scheme == 'pb_stop_programming/STOP'
                 
                 # Now we build a dictionary of the final state to send back to the GUI:
                 return_values = {}
