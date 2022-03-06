@@ -431,33 +431,50 @@ class NI_DAQmx(IntermediateDevice):
         """Collect digital output data and create the output array"""
         if not digitals:
             return None
-        n_timepoints = 1 if self.static_DO else len(times)
-        # List of output bits by port number:
-        bits_by_port = {}
-        # table names and dtypes by port number:
-        columns = {}
+        # n_timepoints = 1 if self.static_DO else len(times)
+        # # List of output bits by port number:
+        # bits_by_port = {}
+        # # table names and dtypes by port number:
+        # columns = {}
+
+        num_DO = 0
+        port_offset = {}
+        for port_name in self.ports:
+                port = self.ports[port_name]
+                if port['supports_buffered']:
+                    port_offset[port_name] = num_DO
+                    num_DO += port['num_lines']
+        outputarray = [0] * num_DO
+
         for connection, output in digitals.items():
             port, line = split_conn_DO(connection)
             port_str = 'port%d' % port
-            if port not in bits_by_port:
-                # Make a list of the right size for the number of lines
-                # on the port, or the number of bits in the smallest integer
-                # type that is equal to or larger than the number of lines.
-                nlines = self.ports[port_str]["num_lines"]
-                int_type = _smallest_int_type(nlines)
-                int_type_nbits = 8 * int_type().nbytes
-                columns[port] = (port_str, int_type)
-                bits_by_port[port] = [0] * int_type_nbits
-            bits_by_port[port][line] = output.raw_output
-        dtypes = [columns[port] for port in sorted(columns)]
-        digital_out_table = np.empty(n_timepoints, dtype=dtypes)
-        for port, bits in bits_by_port.items():
-            # Pack the bits from each port into an integer:
-            port_str, dtype = columns[port]
-            values = bitfield(bits, dtype=dtype)
-            # Put them into the table:
-            digital_out_table[port_str] = np.array(values)
-        return digital_out_table
+
+            outputarray[port_offset[port_str] + line] = output.raw_output
+
+            # if port not in bits_by_port:
+            #     # Make a list of the right size for the number of lines
+            #     # on the port, or the number of bits in the smallest integer
+            #     # type that is equal to or larger than the number of lines.
+            #     nlines = self.ports[port_str]["num_lines"]
+            #     int_type = _smallest_int_type(nlines)
+            #     int_type_nbits = 8 * int_type().nbytes
+            #     columns[port] = (port_str, int_type)
+            #     bits_by_port[port] = [0] * int_type_nbits
+            # bits_by_port[port][line] = output.raw_output
+
+        bits = bitfield(outputarray, dtype=np.uint32) # TODO: change np.uint32
+        return bits
+
+        # dtypes = [columns[port] for port in sorted(columns)]
+        # digital_out_table = np.empty(n_timepoints, dtype=dtypes)
+        # for port, bits in bits_by_port.items():
+        #     # Pack the bits from each port into an integer:
+        #     port_str, dtype = columns[port]
+        #     values = bitfield(bits, dtype=dtype)
+        #     # Put them into the table:
+        #     digital_out_table[port_str] = np.array(values)
+        # return digital_out_table
 
     def _make_analog_input_table(self, inputs):
         """Collect analog input instructions and create the acquisition table"""
@@ -602,6 +619,20 @@ class NI_DAQmx(IntermediateDevice):
             grp.create_dataset('DO', data=DO_table, compression=config.compression)
         if AI_table is not None:
             grp.create_dataset('AI', data=AI_table, compression=config.compression)
+
+        if DO_table is not None: # Table must be non empty
+            # construct a single string that has each port and line distribution separated by commas
+            # this should coincide with the convention used by the create/write functions in the DAQmx library
+            ports_str = ""
+            for port_name in self.ports:
+                port = self.ports[port_name]
+                if port['supports_buffered']:
+                    ports_str = f'{ports_str}{self.MAX_name}/{port_name}/line0:{port["num_lines"]-1},'
+            if ports_str != "":
+                ports_str = ports_str[:-1] # delete final comma in string
+            self.set_property('digital_lines',(ports_str),location='device_properties')
+        else:
+            self.set_property('digital_lines',(''),location='device_properties')
 
 
 from .models import *
