@@ -219,13 +219,11 @@ class HP_6626ATab(DeviceTab):
 
     @define_state(MODE_BUFFERED, False)
     def transition_to_manual(self, notify_queue, program=False):
-        if self.run_thread is not None:
-            self.run_thread.join()
         DeviceTab.transition_to_manual(self, notify_queue, program)
 
     def initialise_workers(self):
         worker_initialisation_kwargs = {
-            'GPIB_address': self.GPIB_address, 
+            'GPIB_address': self.GPIB_address,
             'num_outputs': self.num_outputs,
             'jump_address': str(self.settings['connection_table'].jump_device_address),
         }
@@ -304,20 +302,18 @@ class HP_6626AWorker(GPIBWorker):
         self.check_remote_values()
         return {}  # no need to adjust the values. Can add a check_remote_values() here to read current values from power supply
 
-
     def run_experiment(self, device_name):
         self.from_master_socket.recv()
         while True:
 
             self.to_master_socket.send(str.encode(f"fin {device_name}"))
-            msg = self.from_master_socket.recv() # load message
+            msg = self.from_master_socket.recv()  # load message
 
             if msg == b'exit':
                 return
 
             self.to_master_socket.send(str.encode(f"rdy {device_name}"))
-            msg = self.from_master_socket.recv() # load message
-
+            msg = self.from_master_socket.recv()  # load message
 
     def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
         # for remote worker to find correct find path:
