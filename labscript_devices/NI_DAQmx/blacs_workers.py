@@ -20,6 +20,8 @@ from PyDAQmx.DAQmxConstants import *
 from PyDAQmx.DAQmxTypes import *
 from PyDAQmx.DAQmxCallBack import *
 
+import pandas as pd
+
 import zmq
 
 import numpy as np
@@ -93,12 +95,13 @@ class NI_DAQmxJumpWorker(Worker):
                 device = msg.split()[-1]
                 self.device_states[device] = FINISHED
 
+                print(f"Received {device}")
                 is_done = True
                 for dev in self.device_states:
                     if self.device_states[dev] != FINISHED:
                         print(f"Waiting for {dev}")
                         is_done = False
-                        print(f"Waiting for {dev}")
+                print("")
                 if is_done:
                     break
             
@@ -129,10 +132,14 @@ class NI_DAQmxJumpWorker(Worker):
                 device = msg.split()[-1]
                 self.device_states[device] = READY
 
+                print(f"Received {device}")
+
                 is_done = True
                 for dev in self.device_states:
                     if self.device_states[dev] != READY:
                         is_done = False
+                        print(f"Waiting for {dev}")
+                print("")
                 if is_done:
                     break
 
@@ -236,6 +243,9 @@ class NI_DAQmxOutputWorker(Worker):
         self.run_thread = None
 
         self.sections = []
+
+        self.AO_all_zero = True
+        self.DO_all_zero = True
 
     def stop_tasks(self):
         if self.AO_task is not None:
@@ -430,7 +440,14 @@ class NI_DAQmxOutputWorker(Worker):
             self.DO_task.StartTask()
 
         final_values = {}
-        # TODO: final values...
+
+        k = 0
+        for port_name in self.ports:
+            port = self.ports[port_name]
+            if port['supports_buffered']:
+                for j in range(port['num_lines']):
+                    final_values[f'{port_name}/line{j}'] = do_write_data[-1,k]
+                    k += 1
 
         return final_values
 
@@ -1089,6 +1106,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                 self.semiperiods.append(semiperiods[-1])
                 # Alright, we're now a short way into the experiment.
                 for wait in self.wait_table:
+                    print("Process wait")
                     # How long until when the next wait should timeout?
                     timeout = wait['time'] + wait['timeout'] - current_time
                     timeout = max(timeout, 0)  # ensure non-negative
@@ -1120,6 +1138,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                     # Inform any interested parties that a wait has completed:
                     postdata = _ensure_str(wait['label'])
                     self.wait_completed.post(self.h5_file, data=postdata)
+                    print("Finished wait")
                 # Inform any interested parties that waits have all finished:
                 self.logger.debug('All waits finished')
                 self.all_waits_finished.post(self.h5_file)
@@ -1177,6 +1196,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         CI_chan = self.MAX_name + '/' + self.wait_acq_connection
         # What is the longest time in between waits, plus the timeout of the
         # second wait?
+        print("Start task", self.wait_table)
         interwait_times = np.diff([0] + list(self.wait_table['time']))
         max_measure_time = max(interwait_times + self.wait_table['timeout'])
         # Allow for software delays in timeouts.
@@ -1212,6 +1232,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
         while True:
 
+            time.sleep(0.01)
             if self.wait_table is not None and self.wait_monitor_thread is not None:
                 self.wait_monitor_thread.join()
 
@@ -1227,6 +1248,8 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
             self.run_section(next_section)
 
+            time.sleep(0.25)
+            print("send ready wait")
             self.to_master_socket.send(str.encode(f"rdy wait"))
             msg = self.from_master_socket.recv() # load message
 
@@ -1236,15 +1259,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         # Get data from HDF5 file
         full_wait_table = []
 
-        with h5py.File(h5file, 'r') as hdf5_file:
-            dataset = hdf5_file['waits']
-            if len(dataset) == 0:
-                # There are no waits. Do nothing.
-                self.logger.debug('There are no waits, not transitioning to buffered')
-                self.wait_table = None
-                return {}
-            self.wait_table = dataset[:]
-
         with h5py.File(h5file, "r") as hdf5_file:
             dataset = hdf5_file['waits']
             if len(dataset) == 0:
@@ -1253,34 +1267,52 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                 self.wait_table = None
                 self.sections = []
                 return {}
-            full_wait_table = self.wait_table[:]
+            full_wait_table = dataset[:]
 
             jumps = hdf5_file['jumps'][:]
             master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
             end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
-            
-        timestamps = []
-        for j in range(len(jumps)):
-            timestamps.append(jumps[j]["time"])
-            timestamps.append(jumps[j]["to_time"])
 
-        timestamps.append(0)
-        timestamps.append(end_time)
 
-        timestamps = sorted(set(timestamps))
+        # TODO: remove hack :D
+        # self.sections = [
+        #     None,
+        #     full_wait_table,
+        #     None
+        # ]
+        self.sections = [
+            full_wait_table,
+        ]
 
-        self.sections = []
-        for i in range(len(timestamps)-1):
-            section_wait_table = []
-            for w in full_wait_table:
-                if timestamps[i] <= w['time'] < timestamps[i+1]:
-                    section_wait_table.append(w)
+        # timestamps = []
+        # for j in range(len(jumps)):
+        #     timestamps.append(jumps[j]["time"])
+        #     timestamps.append(jumps[j]["to_time"])
 
-            self.sections.append(section_wait_table)
+        # timestamps.append(0)
+        # timestamps.append(end_time)
+
+        # timestamps = sorted(set(timestamps))
+
+        # print(timestamps)
+
+        # self.sections = []
+        # for i in range(len(timestamps)-1):
+        #     print(f"Build section {i}")
+        #     section_wait_table = []
+        #     for w in full_wait_table:
+        #         if timestamps[i] <= w['time'] < timestamps[i+1]:
+        #             section_wait_table.append(w)
+
+        #     if len(section_wait_table) > 0:
+        #         self.sections.append(pd.DataFrame(data=section_wait_table, columns=["label", "time", "timeout"]))
+        #     else:
+        #         self.sections.append(None)
 
     def run_section(self, section):
+
         self.wait_table = self.sections[section]
-        if self.wait_table == None:
+        if self.wait_table is None:
             return False
         self.start_tasks()
 
@@ -1298,6 +1330,8 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.logger.debug('transition_to_buffered')
         self.h5_file = h5file
         self.compile_sections(h5file)
+
+        print(self.sections)
 
         self.run_section(0)
 
