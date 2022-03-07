@@ -19,7 +19,7 @@ class GPIBWorker(Worker):
 
         self.context = zmq.Context()
         self.from_master_socket = self.context.socket(zmq.SUB)
-        self.to_master_socket = self.context.socket(zmq.PUB)
+        self.to_master_socket = self.context.socket(zmq.PUSH)
 
         self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
         self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")

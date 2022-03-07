@@ -120,10 +120,10 @@ class AndorGridJumperWorker(Worker):
 
         self.from_master_socket = self.context.socket(zmq.PUB)
         self.from_master_socket.bind(f"tcp://*:44555")
-        self.to_master_socket = self.context.socket(zmq.SUB)
+        self.to_master_socket = self.context.socket(zmq.PULL)
         self.to_master_socket.bind(f"tcp://*:44556")
         
-        self.to_master_socket.subscribe("")
+        # self.to_master_socket.subscribe("")
 
         self.sections = []
         self.current_section = 0
@@ -170,8 +170,6 @@ class AndorGridJumperWorker(Worker):
         print("Run experiment")
         max_jumps = 5
         jump_counter = 0
-
-        time.sleep(0.5) # TODO: REMOVE!!!
 
         self.from_master_socket.send(b"init")
 
