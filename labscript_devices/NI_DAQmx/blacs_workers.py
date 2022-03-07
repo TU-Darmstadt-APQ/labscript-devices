@@ -993,6 +993,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.wait_table = None
         self.semiperiods = None
         self.wait_monitor_thread = None
+        self.run_thread = None
 
         # Saved error in case one occurs in the thread, we can raise it later in
         # transition_to_manual:
@@ -1019,8 +1020,25 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.timeout_trigger = np.array([trigger_value], dtype=np.uint8)
         self.timeout_rearm = np.array([rearm_value], dtype=np.uint8)
 
+
+        self.context = zmq.Context()
+        self.from_master_socket = self.context.socket(zmq.SUB)
+        self.to_master_socket = self.context.socket(zmq.PUB)
+
+        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
+        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
+
+        self.from_master_socket.subscribe("")
+
+        self.sections = []
+
     def shutdown(self):
         self.stop_tasks(True)
+
+        self.from_master_socket.close()
+        self.to_master_socket.close()
+
+        self.context.term()
 
     def read_edges(self, npts, timeout=None):
         """Wait up to the given timeout in seconds for an edge on the wait monitor and
@@ -1188,9 +1206,36 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                 1, True, 1, DAQmx_Val_GroupByChannel, self.timeout_rearm, written, None
             )
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
-        self.logger.debug('transition_to_buffered')
-        self.h5_file = h5file
+    def run_experiment(self, device_name):
+
+        self.from_master_socket.recv()
+
+        while True:
+
+            if self.wait_table is not None and self.wait_monitor_thread is not None:
+                self.wait_monitor_thread.join()
+
+            self.to_master_socket.send(str.encode(f"fin wait"))
+
+            msg = self.from_master_socket.recv() # load message
+
+            if msg == b'exit':
+                return
+
+            next_section = int(msg.split()[-1])
+            print(f"Next section is {next_section}")
+
+            self.run_section(next_section)
+
+            self.to_master_socket.send(str.encode(f"rdy wait"))
+            msg = self.from_master_socket.recv() # load message
+
+
+    def compile_sections(self, h5file):
+        
+        # Get data from HDF5 file
+        full_wait_table = []
+
         with h5py.File(h5file, 'r') as hdf5_file:
             dataset = hdf5_file['waits']
             if len(dataset) == 0:
@@ -1200,6 +1245,43 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                 return {}
             self.wait_table = dataset[:]
 
+        with h5py.File(h5file, "r") as hdf5_file:
+            dataset = hdf5_file['waits']
+            if len(dataset) == 0:
+                # There are no waits. Do nothing.
+                self.logger.debug('There are no waits, not transitioning to buffered')
+                self.wait_table = None
+                self.sections = []
+                return {}
+            full_wait_table = self.wait_table[:]
+
+            jumps = hdf5_file['jumps'][:]
+            master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
+            end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
+            
+        timestamps = []
+        for j in range(len(jumps)):
+            timestamps.append(jumps[j]["time"])
+            timestamps.append(jumps[j]["to_time"])
+
+        timestamps.append(0)
+        timestamps.append(end_time)
+
+        timestamps = sorted(set(timestamps))
+
+        self.sections = []
+        for i in range(len(timestamps)-1):
+            section_wait_table = []
+            for w in full_wait_table:
+                if timestamps[i] <= w['time'] < timestamps[i+1]:
+                    section_wait_table.append(w)
+
+            self.sections.append(section_wait_table)
+
+    def run_section(self, section):
+        self.wait_table = self.sections[section]
+        if self.wait_table == None:
+            return False
         self.start_tasks()
 
         # An array to store the results of counter acquisition:
@@ -1208,6 +1290,20 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         # Not a daemon thread, as it implements wait timeouts - we need it to stay alive
         # if other things die.
         self.wait_monitor_thread.start()
+
+        return True
+
+
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+        self.logger.debug('transition_to_buffered')
+        self.h5_file = h5file
+        self.compile_sections(h5file)
+
+        self.run_section(0)
+
+        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
+        self.run_thread.start()
+
         self.logger.debug('finished transition to buffered')
 
         return {}
