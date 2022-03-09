@@ -122,7 +122,7 @@ class AndorGridJumperWorker(Worker):
         self.from_master_socket.bind(f"tcp://*:44555")
         self.to_master_socket = self.context.socket(zmq.PULL)
         self.to_master_socket.bind(f"tcp://*:44556")
-        
+
         self.sections = []
         self.current_section = 0
         self.total_past_t = 0
@@ -166,6 +166,7 @@ class AndorGridJumperWorker(Worker):
         max_jumps = 5
         jump_counter = 0
 
+        time.sleep(0.5)
         self.from_master_socket.send(b"init")
 
         while True:
@@ -179,6 +180,7 @@ class AndorGridJumperWorker(Worker):
                 msg = self.to_master_socket.recv()
                 device = msg.split()[-1]
                 self.device_states[device] = FINISHED
+                print(f"Got: {msg}")
 
                 is_done = True
                 for dev in self.device_states:

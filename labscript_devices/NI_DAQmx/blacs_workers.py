@@ -245,6 +245,9 @@ class NI_DAQmxOutputWorker(Worker):
         self.AO_all_zero = True
         self.DO_all_zero = True
 
+        self.DO_active = False
+        self.AO_active = False
+
     def stop_tasks(self):
         if self.AO_task is not None:
             self.AO_task.StopTask()
@@ -378,7 +381,9 @@ class NI_DAQmxOutputWorker(Worker):
         """Create the DO task and program in the DO table for a shot. Return a
         dictionary of the final values of each channel in use"""
         if DO_table is None:
+            self.DO_active = False
             return {}
+        self.DO_active = True
         # self.DO_task = Task()
         # written = int32()
         # ports = DO_table.dtype.names
@@ -451,7 +456,12 @@ class NI_DAQmxOutputWorker(Worker):
 
     def program_buffered_AO(self, AO_table):
         if AO_table is None:
+            print("No AO to write")
+            self.AO_active = False
             return {}
+        print("Write AO ", AO_table)
+        #AO_table = AO_table[:-1]
+        self.AO_active = True
         self.AO_task = Task()
         written = int32()
         channels = ', '.join(self.MAX_name + '/' + c for c in AO_table.dtype.names)
@@ -496,6 +506,7 @@ class NI_DAQmxOutputWorker(Worker):
                 npts,
             )
 
+            print(f"write {npts}values to memory.")
             # Write data:
             self.AO_task.WriteAnalogF64(
                 npts,
@@ -516,48 +527,65 @@ class NI_DAQmxOutputWorker(Worker):
 
     def run_experiment(self, device_name):
 
+        print("Wait for start")
+        #time.sleep(0.1)
         self.from_master_socket.recv()
         current_section = 0
+        print("start queue")
+        try:
+            while True:
 
-        while True:
+                time.sleep(0.1)
+                print("waitfor ao")
+                if self.AO_active and (self.AO_task is not None) and (not self.static_AO):
+                    self.AO_task.WaitUntilTaskDone(-1)
+                    self.AO_task.StopTask()
 
-            if self.AO_task is not None:
-                self.AO_task.WaitUntilTaskDone(-1)
-                self.AO_task.StopTask()
 
-                
-            if self.DO_task is not None:
-                self.DO_task.WaitUntilTaskDone(-1)
-                self.DO_task.StopTask()
+                print("waitfor do")
+                if self.DO_active and (self.DO_task is not None) and (not self.static_DO):
+                    self.DO_task.WaitUntilTaskDone(-1)
+                    self.DO_task.StopTask()
 
-            self.to_master_socket.send(str.encode(f"fin {device_name}"))
+                print("send fin")
+                time.sleep(0.01)
+                self.to_master_socket.send(str.encode(f"fin {device_name}"))
 
-            msg = self.from_master_socket.recv() # load message
+                msg = self.from_master_socket.recv() # load message
 
-            if msg == b"exit":
-                break
-            
-            next_section = int(msg.split()[1])
-            
-            if current_section != next_section:
+                print(f"recv {msg}")
+                if msg == b"exit":
+                    break
 
-                if not self.static_AO and not self.AO_all_zero:
-                    self.AO_task.ClearTask()
-                if not self.static_DO and not self.DO_all_zero:
-                    self.DO_task.ClearTask()
+                next_section = int(msg.split()[1])
 
-                self.program_buffered_AO(self.sections[next_section]['AO_values'])
-                self.program_buffered_DO(self.sections[next_section]['DO_values'])
-            else:
-                if self.AO_task is not None:
-                    self.AO_task.StartTask()
-                if self.DO_task is not None:
-                    self.DO_task.StartTask()
+                if current_section != next_section:
 
-            current_section = next_section
+                    if not self.static_AO and not self.AO_all_zero:
+                        self.AO_task.ClearTask()
+                        self.AO_task = None
+                    if not self.static_DO and not self.DO_all_zero:
+                        self.DO_task.ClearTask()
+                        self.AO_task = None
 
-            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
-            msg = self.from_master_socket.recv() # load message
+                    self.program_buffered_AO(self.sections[next_section]['AO_values'])
+                    self.program_buffered_DO(self.sections[next_section]['DO_values'])
+                else:
+                    if self.AO_task is not None:
+                        self.AO_task.StartTask()
+                    if self.DO_task is not None:
+                        self.DO_task.StartTask()
+
+                current_section = next_section
+
+                time.sleep(0.1)
+
+                self.to_master_socket.send(str.encode(f"rdy {device_name}"))
+                msg = self.from_master_socket.recv() # load message
+        except Exception as e:
+            print("EXCEPTION: ", e)
+
+
 
 
     def filter_data_by_time(self, time, values, min_time, max_time):
@@ -569,7 +597,7 @@ class NI_DAQmxOutputWorker(Worker):
 
         return_values = []
         for i in range(len(values)):
-            if min_time <= time[i] <= max_time:
+            if min_time <= time[i] < max_time-0.0001:
                 return_values.append(values[i])
         return np.array(return_values)
 
@@ -1086,8 +1114,10 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             # timeout occurs, pulse the timeout output to force a resume of the master
             # pseudoclock. Save the resulting
             self.logger.debug('Wait monitor thread starting')
+            print('Wait monitor thread starting')
             with self.kill_lock:
                 self.logger.debug('Waiting for start of experiment')
+                print('Waiting for start of experiment')
                 # Wait for the pulse indicating the start of the experiment:
                 if self.incomplete_sample_detection:
                     semiperiods = self.read_edges(1, timeout=None)
@@ -1226,6 +1256,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
     def run_experiment(self, device_name):
 
+        time.sleep(0.1)
         self.from_master_socket.recv()
 
         while True:
@@ -1234,6 +1265,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             if self.wait_table is not None and self.wait_monitor_thread is not None:
                 self.wait_monitor_thread.join()
 
+            time.sleep(0.01)
             self.to_master_socket.send(str.encode(f"fin wait"))
 
             msg = self.from_master_socket.recv() # load message
@@ -1273,14 +1305,14 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
 
         # TODO: remove hack :D
-        # self.sections = [
-        #     None,
-        #     full_wait_table,
-        #     None
-        # ]
         self.sections = [
+            None,
             full_wait_table,
+            None
         ]
+        # self.sections = [
+        #     full_wait_table,
+        # ]
 
         # timestamps = []
         # for j in range(len(jumps)):
