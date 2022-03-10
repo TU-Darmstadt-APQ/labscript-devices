@@ -224,10 +224,10 @@ class Pulseblaster_No_DDS_Tab(DeviceTab):
             self.status_widgets[state].setPixmap(pixmap)
         
     
-    @define_state(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True)  
-    def start(self,widget=None):
-        yield(self.queue_work(self._primary_worker,'start_run'))
-        self.status_monitor()
+    # @define_state(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True)  
+    # def start(self,widget=None):
+    #     #yield(self.queue_work(self._primary_worker,'start_run'))
+    #     self.status_monitor()
         
     @define_state(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True)  
     def stop(self,widget=None):
@@ -244,7 +244,7 @@ class Pulseblaster_No_DDS_Tab(DeviceTab):
         """Starts the Pulseblaster, notifying the queue manager when
         the run is over"""
         self.statemachine_timeout_remove(self.status_monitor)
-        self.start()
+        self.status_monitor()
         self.statemachine_timeout_add(100,self.status_monitor,notify_queue)
 
 
