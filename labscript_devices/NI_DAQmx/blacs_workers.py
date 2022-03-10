@@ -237,17 +237,19 @@ class NI_DAQmxOutputWorker(Worker):
         self.runner.start()
 
         def is_finished_callback():
-            WAIT_TIME = 1e-3
+            WAIT_TIME = 5e-3
             if self.AO_task is not None:
-                ret = self.AO_task.WaitUntilTaskDone(WAIT_TIME)
-                if ret != 0:
+                try:
+                    self.AO_task.WaitUntilTaskDone(WAIT_TIME)
+                except:
                     return False
                 self.AO_task.StopTask()
 
                 
             if self.DO_task is not None:
-                ret = self.DO_task.WaitUntilTaskDone(WAIT_TIME)
-                if ret != 0:
+                try:
+                    self.DO_task.WaitUntilTaskDone(WAIT_TIME)
+                except:
                     return False
                 self.DO_task.StopTask()
 
@@ -630,11 +632,6 @@ class NI_DAQmxOutputWorker(Worker):
         # Compile all sections:
         self.compile_sections(h5file, device_name)
 
-        # If we are the wait timeout device, then the final value of the timeout line
-        # should be its rearm value:
-        if self.wait_timeout_device == self.device_name:
-            final_values[self.wait_timeout_connection] = self.wait_timeout_rearm_value
-
 
         # Start first task
         AO_final_values = self.program_buffered_AO(self.sections[0]['AO_values'])
@@ -643,6 +640,11 @@ class NI_DAQmxOutputWorker(Worker):
         final_values = {}
         final_values.update(DO_final_values)
         final_values.update(AO_final_values)
+
+        # If we are the wait timeout device, then the final value of the timeout line
+        # should be its rearm value:
+        if self.wait_timeout_device == self.device_name:
+            final_values[self.wait_timeout_connection] = self.wait_timeout_rearm_value
 
         self.current_section = 0
         self.runner.send_buffered()

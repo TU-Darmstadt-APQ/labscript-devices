@@ -224,10 +224,10 @@ class Pulseblaster_No_DDS_Tab(DeviceTab):
             self.status_widgets[state].setPixmap(pixmap)
         
     
-    # @define_state(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True)  
-    # def start(self,widget=None):
-    #     #yield(self.queue_work(self._primary_worker,'start_run'))
-    #     self.status_monitor()
+    @define_state(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True)
+    def start(self,widget=None):
+        #yield(self.queue_work(self._primary_worker,'start_run'))
+        self.status_monitor()
         
     @define_state(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True)  
     def stop(self,widget=None):
