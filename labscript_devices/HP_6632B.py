@@ -5,7 +5,6 @@ import numpy as np
 import labscript_utils.h5_lock
 import labscript_utils.properties
 import h5py
-import threading
 
 # Specifications for HP6632B:
 max_no_of_outputs = 1
@@ -179,11 +178,7 @@ class HP_6632BTab(DeviceTab):
         DeviceTab.transition_to_manual(self, notify_queue, program)
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {
-            'GPIB_address': self.GPIB_address, 
-            'num_outputs': self.num_outputs,
-            'jump_address': str(self.settings['connection_table'].jump_device_address),
-        }
+        worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address, 'num_outputs': self.num_outputs}
         self.create_worker("main_worker", HP_6632BWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
@@ -249,21 +244,6 @@ class HP_6632BWorker(GPIBWorker):
         self.check_remote_values()
         return {}  # no need to adjust the values. Can add a check_remote_values() here to read current values from power supply
 
-
-    def run_experiment(self, device_name):
-        self.from_master_socket.recv()
-        while True:
-
-            self.to_master_socket.send(str.encode(f"fin {device_name}"))
-            msg = self.from_master_socket.recv() # load message
-
-            if msg == b'exit':
-                return
-
-            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
-            msg = self.from_master_socket.recv() # load message
-
-
     def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
         # for remote worker to find correct find path:
         if getattr(self, 'is_remote', False):
@@ -290,18 +270,11 @@ class HP_6632BWorker(GPIBWorker):
             final_values['out/voltage'] = output_table['v']
             self.send_GPIB_current(current=output_table['c'])
             final_values['out/current'] = output_table['c']
-
-        # start run thread
-        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
-        self.run_thread.start()
-
         # Return final values to use them when transitioning to manual:
         self.final_values = final_values
         return self.final_values
 
     def transition_to_manual(self, abort=False):
-        if self.run_thread is not None:
-            self.run_thread.join()
         # Set all channels to their final values:
         values = self.final_values
 

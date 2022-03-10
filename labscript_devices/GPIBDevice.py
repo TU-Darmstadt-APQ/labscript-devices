@@ -1,5 +1,5 @@
 from blacs.tab_base_classes import Worker
-import zmq
+
 
 class GPIBWorker(Worker):
 
@@ -15,16 +15,6 @@ class GPIBWorker(Worker):
 
         self.rm = None
         self.GPIB_connection = None
-        self.run_thread = None
-
-        self.context = zmq.Context()
-        self.from_master_socket = self.context.socket(zmq.SUB)
-        self.to_master_socket = self.context.socket(zmq.PUSH)
-
-        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
-        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
-
-        self.from_master_socket.subscribe("")
 
         self.init_GPIB()
 
@@ -38,12 +28,6 @@ class GPIBWorker(Worker):
         #self.GPIB_connection.lock_excl()
 
     def shutdown(self):
-
-        self.from_master_socket.close()
-        self.to_master_socket.close()
-
-        self.context.term()
-
         if self.GPIB_connection is not None:
             self.GPIB_connection.unlock()
             self.GPIB_connection.close()  # close GPIB connection
@@ -60,6 +44,4 @@ class GPIBWorker(Worker):
         return self.transition_to_manual()
 
     def transition_to_manual(self):
-        if self.run_thread is not None:
-            self.run_thread.join()
         return True  # return success

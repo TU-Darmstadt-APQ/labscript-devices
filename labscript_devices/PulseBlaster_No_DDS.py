@@ -14,6 +14,7 @@
 from labscript_devices import BLACS_tab, runviewer_parser
 from labscript_devices.PulseBlaster import PulseBlaster, PulseBlasterParser
 from labscript import PseudoclockDevice, config
+from labscript_utils.in_exp_com import RunBaseClass
 
 import threading
 import zmq
@@ -279,20 +280,20 @@ class PulseblasterNoDDSWorker(Worker):
         self.time_based_shot_end_time = None
 
 
-        self.context = zmq.Context()
-        self.from_master_socket = self.context.socket(zmq.SUB)
-        self.to_master_socket = self.context.socket(zmq.PUSH)
+        self.runner = RunBaseClass(self.device_name, self.jump_address)
+        self.runner.start()
 
-        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
-        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
+        self.runner.set_start_callback(self.start_run)
+        def is_finished_callback():
+            status, waits, clock_timer_over = self.check_status(True)
+            if status['waiting']: #TODO: waiting or done depends on programming type...
+                return True
+            return False
 
-        self.from_master_socket.subscribe("")
+        self.runner.set_is_finished_callback(is_finished_callback)
+        self.runner.set_load_next_section_callback(self.program_clock)
 
         self.sections = []
-        self.latest_values = {}
-        
-        self.run_thread = None
-        self.start_event = threading.Event()
         
 
     def program_manual(self,values):
@@ -351,42 +352,7 @@ class PulseblasterNoDDSWorker(Worker):
         if self.time_based_stop_workaround:
             import time
             self.time_based_shot_end_time = time.time() + self.time_based_shot_duration
-        
-        self.start_event.set()
-            
-    def run_experiment(self, device_name):
-        self.from_master_socket.recv()
-
-        print("Wait1")
-        self.start_event.wait()
-        while True:
-            while True:
-                print("Wait2")
-                time.sleep(0.001)
-                status, waits, clock_timer_over = self.check_status(True)
-                print(status)
-                if status['waiting']: #TODO: waiting or done depends on programming type...
-                    break
-            print("Send to master")
-
-            self.to_master_socket.send(str.encode(f"fin {device_name}"))
-
-            print("Wait for master")
-            msg = self.from_master_socket.recv() # load message
-
-            if msg == b'exit':
-                return
-
-            next_section = int(msg.split()[-1])
-            print(f"Next section is {next_section}")
-
-            self.program_clock(next_section)
-
-            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
-            msg = self.from_master_socket.recv() # load message
-
-            self.start_run()
-            print("Start next run")
+                    
 
     def program_clock(self, section, initial_values = None, fresh=False):
 
@@ -472,7 +438,6 @@ class PulseblasterNoDDSWorker(Worker):
     def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
         self.h5file = h5file
         
-        self.start_event.clear()
         self.time_based_stop_workaround = False
         self.sections = []
         with h5py.File(h5file,'r') as hdf5_file:
@@ -523,13 +488,12 @@ class PulseblasterNoDDSWorker(Worker):
 
             self.program_clock(0, initial_values, fresh)
 
-            self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
-            self.run_thread.start()
+            self.runner.send_buffered()
 
             return return_values
             
     def check_status(self, force=False):
-        if (self.run_thread is not None) and self.run_thread.is_alive() and not force:
+        if not force and (self.runner.state not in ['MANUAL', 'INIT']):
             return {
                 "stopped": False,
                 "reset": False,
@@ -553,9 +517,6 @@ class PulseblasterNoDDSWorker(Worker):
         
     def transition_to_manual(self):
 
-        if self.run_thread is not None:
-            self.run_thread.join()
-
         status, waits_pending, time_based_shot_over = self.check_status()
         
         if self.programming_scheme == 'pb_start/BRANCH':
@@ -578,6 +539,7 @@ class PulseblasterNoDDSWorker(Worker):
             return False
      
     def abort_buffered(self):
+        self.runner.abort()
         # Stop the execution
         self.pb_stop()
         # Reset to the beginning of the pulse sequence
@@ -590,16 +552,14 @@ class PulseblasterNoDDSWorker(Worker):
         return True
         
     def abort_transition_to_buffered(self):
+        self.runner.abort()
         return True
         
     def shutdown(self):
         #TODO: implement this
-        self.from_master_socket.close()
-        self.to_master_socket.close()
+        self.runner.shutdown()
 
-        self.context.term()
-        pass
-        
+
 @runviewer_parser
 class PulseBlaster_No_DDS_Parser(PulseBlasterParser):
     num_dds = 0

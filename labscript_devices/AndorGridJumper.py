@@ -13,6 +13,7 @@ import zprocess
 import labscript_utils.h5_lock
 import h5py
 
+from labscript_utils.in_exp_com import RunMasterClass
 
 class AndorGridJumper(Device):
     @set_passed_properties(
@@ -109,38 +110,31 @@ class AndorGridJumperTab(DeviceTab):
         self.ui.status_icon.setPixmap(pixmap)
         self.ui.server_status.setText(status_text)
 
+    @define_state(MODE_BUFFERED, True)
+    def start_run(self, notify_queue):
+        """This starts the run."""
+        yield (self.queue_work(self.primary_worker, "start_run"))
+
 
 class AndorGridJumperWorker(Worker):
     def init(self):
 
-        self.context = zmq.Context()
+        self.runner = RunMasterClass()
+        self.runner.start()
 
-        self.devices = json.loads(self.devices)
-        self.devices = [str.encode(d) for d in self.devices]
-
-        self.from_master_socket = self.context.socket(zmq.PUB)
-        self.from_master_socket.bind(f"tcp://*:44555")
-        self.to_master_socket = self.context.socket(zmq.PULL)
-        self.to_master_socket.bind(f"tcp://*:44556")
+        self.runner.set_compute_next_section_callback(self.next_section)
         
+        self.jump_counter = 0
         self.sections = []
         self.current_section = 0
         self.total_past_t = 0
 
-        self.device_states = {}
-        for dev in self.devices:
-            self.device_states[dev] = EXITED
-
-        self.jump_thread = None
 
     def program_manual(self, values):
         return {}
 
     def shutdown(self):
-
-        self.from_master_socket.close()
-        self.to_master_socket.close()
-        self.context.term()
+        self.runner.shutdown()
 
     def update_settings_and_check_connectivity(self, host):
         self.host = host
@@ -160,96 +154,44 @@ class AndorGridJumperWorker(Worker):
             # need to add: Make a Fake Exposure
             raise Exception('No grid received')
 
-    def run_experiment(self, device_name):
+    def start_run(self):
+        self.runner.send_start()
 
-        print("Run experiment")
+    def next_section(self):
         max_jumps = 5
-        jump_counter = 0
 
-        self.from_master_socket.send(b"init")
+        # Evaluate which section is next
+        next_section = self.current_section + 1
+        if self.sections[self.current_section]['jump']:
+            # TODO: evaluate where to jump. Currently just jump 5 times.
 
-        while True:
+            print("Jump decision")
 
-            start_time = time.perf_counter()
+            grid = self.get_grid()
+            print(grid)
 
-            # Wait for all devices to finish
-            self.device_states[str.encode(device_name)] = FINISHED  # This device is always finished
-            print(f"Finished {device_name}")
-            while True:
-                msg = self.to_master_socket.recv()
-                device = msg.split()[-1]
-                self.device_states[device] = FINISHED
+            if self.jump_counter < max_jumps:
+                for s in range(len(self.sections)):
+                    if self.sections[s]['start'] == self.sections[self.current_section]['to_time']:
+                        next_section = s
+                        self.jump_counter += 1
+                        break
 
-                is_done = True
-                for dev in self.device_states:
-                    if self.device_states[dev] != FINISHED:
-                        print(f"Waiting for {dev}")
-                        is_done = False
-                if is_done:
-                    break
+        print("next section: ", next_section)
+        print("jump_counter: ", self.jump_counter)
 
-                print(f"")
-
-            # Evaluate which section is next
-            next_section = self.current_section + 1
-            if self.sections[self.current_section]['jump']:
-                # TODO: evaluate where to jump. Currently just jump 5 times.
-
-                print("Jump decision")
-
-                grid = self.get_grid()
-                print(grid)
-
-                if jump_counter < max_jumps:
-                    jump_counter += 1
-                    for s in range(len(self.sections)):
-                        if self.sections[s]['start'] == self.sections[self.current_section]['to_time']:
-                            next_section = s
-                            break
-
-            if next_section >= len(self.sections):
-                self.from_master_socket.send(b"exit")
-                break  # Shot finished
-
+        if next_section >= len(self.sections):
+            return -1
+        else:
             self.current_section = next_section
+            return next_section
 
-            print(f"load {next_section}")
-            # Prepare all devices
-            self.from_master_socket.send(str.encode(f"load {next_section}"))
-
-            # Wait for all devices to be ready
-            self.device_states[str.encode(device_name)] = READY  # This device is always finished
-            while True:
-                msg = self.to_master_socket.recv()
-                device = msg.split()[-1]
-                self.device_states[device] = READY
-
-                is_done = True
-                for dev in self.device_states:
-                    if self.device_states[dev] != READY:
-                        is_done = False
-                if is_done:
-                    break
-
-            # Send start signal
-            self.from_master_socket.send(b"start")
-
-            finish_time = time.perf_counter()
-            t = finish_time - start_time
-            print(f"Loop took {t*1e6:.2f}us")
-
-            for dev in self.device_states:
-                self.device_states[dev] = RUNNING
-
-        print("Finished experiment...")
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
 
         self.current_section = 0
         self.total_past_t = 0
-
-        for dev in self.devices:
-            self.device_states[dev] = RUNNING
+        self.jump_counter = 0
 
         with h5py.File(h5file, 'r') as hdf5_file:
             jumps = hdf5_file['jumps'][:]
@@ -286,23 +228,16 @@ class AndorGridJumperWorker(Worker):
 
             self.sections.append(section)
 
-        self.jump_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
-        self.jump_thread.start()
+        self.runner.send_buffered()
 
         return {}
 
     def transition_to_manual(self, abort=False):
-
-        # TODO: stop run thread
-
-        self.device_states = {}
-        for dev in self.devices:
-            self.device_states[dev] = EXITED
-
         return True
 
     def abort_transition_to_buffered(self):
         return self.transition_to_manual(True)
 
     def abort_buffered(self):
+        self.runner.abort()
         return self.transition_to_manual(True)

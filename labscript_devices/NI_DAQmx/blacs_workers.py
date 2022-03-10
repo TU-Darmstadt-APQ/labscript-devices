@@ -39,6 +39,8 @@ from blacs.tab_base_classes import Worker
 
 from .utils import split_conn_port, split_conn_DO, split_conn_AI
 from .daqmx_utils import incomplete_sample_detection
+
+from labscript_utils.in_exp_com import RunBaseClass
     
 
 RUNNING = "run"
@@ -50,6 +52,7 @@ EXITED = "ext"
 class NI_DAQmxJumpWorker(Worker):
     def init(self):
 
+        # TODO!!!!!!!
         self.context = zmq.Context()
 
         self.devices = json.loads(self.devices)
@@ -219,6 +222,7 @@ class NI_DAQmxJumpWorker(Worker):
     def abort_buffered(self):
         return self.transition_to_manual(True)
 
+
 class NI_DAQmxOutputWorker(Worker):
     def init(self):
 
@@ -229,16 +233,44 @@ class NI_DAQmxOutputWorker(Worker):
         DAQmxResetDevice(self.MAX_name)
         self.start_manual_mode_tasks()
         
-        self.context = zmq.Context()
-        self.from_master_socket = self.context.socket(zmq.SUB)
-        self.to_master_socket = self.context.socket(zmq.PUSH)
+        self.runner = RunBaseClass(self.name, self.jump_address)
+        self.runner.start()
 
-        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
-        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
-        
-        self.from_master_socket.subscribe("")
+        def is_finished_callback():
+            WAIT_TIME = 1e-3
+            if self.AO_task is not None:
+                ret = self.AO_task.WaitUntilTaskDone(WAIT_TIME)
+                if ret != 0:
+                    return False
+                self.AO_task.StopTask()
 
-        self.run_thread = None
+                
+            if self.DO_task is not None:
+                ret = self.DO_task.WaitUntilTaskDone(WAIT_TIME)
+                if ret != 0:
+                    return False
+                self.DO_task.StopTask()
+
+            return True
+
+        def load_section(next_section):
+            if self.current_section != next_section:
+                if not self.static_AO and not self.AO_all_zero:
+                    self.AO_task.ClearTask()
+                if not self.static_DO and not self.DO_all_zero:
+                    self.DO_task.ClearTask()
+                self.program_buffered_AO(self.sections[next_section]['AO_values'])
+                self.program_buffered_DO(self.sections[next_section]['DO_values'])
+            else:
+                if self.AO_task is not None:
+                    self.AO_task.StartTask()
+                if self.DO_task is not None:
+                    self.DO_task.StartTask()
+
+        self.runner.set_is_finished_callback(is_finished_callback)
+        self.runner.set_load_next_section_callback(load_section)
+
+        self.current_section = 0
 
         self.sections = []
 
@@ -256,12 +288,9 @@ class NI_DAQmxOutputWorker(Worker):
             self.DO_task = None
 
     def shutdown(self):
+        self.runner.shutdown()
         self.stop_tasks()
         
-        self.from_master_socket.close()
-        self.to_master_socket.close()
-
-        self.context.term()
 
     def check_version(self):
         """Check the version of PyDAQmx is high enough to avoid a known bug"""
@@ -513,53 +542,6 @@ class NI_DAQmxOutputWorker(Worker):
         return final_values
 
 
-
-    def run_experiment(self, device_name):
-
-        self.from_master_socket.recv()
-        current_section = 0
-
-        while True:
-
-            if self.AO_task is not None:
-                self.AO_task.WaitUntilTaskDone(-1)
-                self.AO_task.StopTask()
-
-                
-            if self.DO_task is not None:
-                self.DO_task.WaitUntilTaskDone(-1)
-                self.DO_task.StopTask()
-
-            self.to_master_socket.send(str.encode(f"fin {device_name}"))
-
-            msg = self.from_master_socket.recv() # load message
-
-            if msg == b"exit":
-                break
-            
-            next_section = int(msg.split()[1])
-            
-            if current_section != next_section:
-
-                if not self.static_AO and not self.AO_all_zero:
-                    self.AO_task.ClearTask()
-                if not self.static_DO and not self.DO_all_zero:
-                    self.DO_task.ClearTask()
-
-                self.program_buffered_AO(self.sections[next_section]['AO_values'])
-                self.program_buffered_DO(self.sections[next_section]['DO_values'])
-            else:
-                if self.AO_task is not None:
-                    self.AO_task.StartTask()
-                if self.DO_task is not None:
-                    self.DO_task.StartTask()
-
-            current_section = next_section
-
-            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
-            msg = self.from_master_socket.recv() # load message
-
-
     def filter_data_by_time(self, time, values, min_time, max_time):
 
         if time is None:
@@ -634,12 +616,8 @@ class NI_DAQmxOutputWorker(Worker):
         # Mirror the clock terminal, if applicable:
         self.set_mirror_clock_terminal_connected(True)
 
-        # Program the output tasks and retrieve the final values of each output:
-        DO_final_values, AO_final_values = self.compile_sections(h5file, device_name)
-
-        final_values = {}
-        final_values.update(DO_final_values)
-        final_values.update(AO_final_values)
+        # Compile all sections:
+        self.compile_sections(h5file, device_name)
 
         # If we are the wait timeout device, then the final value of the timeout line
         # should be its rearm value:
@@ -648,15 +626,15 @@ class NI_DAQmxOutputWorker(Worker):
 
 
         # Start first task
-        self.program_buffered_AO(self.sections[0]['AO_values'])
-        self.program_buffered_DO(self.sections[0]['DO_values'])
+        AO_final_values = self.program_buffered_AO(self.sections[0]['AO_values'])
+        DO_final_values = self.program_buffered_DO(self.sections[0]['DO_values'])
 
-        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
-        self.run_thread.start()
+        final_values = {}
+        final_values.update(DO_final_values)
+        final_values.update(AO_final_values)
 
-        # Get the data to be programmed into the output tasks:
-        # AO_table, DO_table = self.get_output_tables(h5file, device_name)
-
+        self.current_section = 0
+        self.runner.send_buffered()
 
         return final_values
 
@@ -664,9 +642,6 @@ class NI_DAQmxOutputWorker(Worker):
         # Stop output tasks and call program_manual. Only call StopTask if not aborting.
         # Otherwise results in an error if output was incomplete. If aborting, call
         # ClearTask only.
-
-        if self.run_thread is not None:
-            self.run_thread.join()
 
         npts = uInt64()
         samples = uInt64()
@@ -710,9 +685,11 @@ class NI_DAQmxOutputWorker(Worker):
         return True
 
     def abort_transition_to_buffered(self):
+        self.runner.abort()
         return self.transition_to_manual(True)
 
     def abort_buffered(self):
+        self.runner.abort()
         return self.transition_to_manual(True)
 
 
@@ -1008,7 +985,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.wait_table = None
         self.semiperiods = None
         self.wait_monitor_thread = None
-        self.run_thread = None
 
         # Saved error in case one occurs in the thread, we can raise it later in
         # transition_to_manual:
@@ -1036,14 +1012,16 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.timeout_rearm = np.array([rearm_value], dtype=np.uint8)
 
 
-        self.context = zmq.Context()
-        self.from_master_socket = self.context.socket(zmq.SUB)
-        self.to_master_socket = self.context.socket(zmq.PUSH)
+        self.runner = RunBaseClass(self.name, self.jump_address)
+        self.runner.start()
 
-        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
-        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
+        def is_finished_callback():
+            if self.wait_table is not None and self.wait_monitor_thread is not None:
+                return not self.wait_monitor_thread.is_alive()
+            return True
 
-        self.from_master_socket.subscribe("")
+        self.runner.set_is_finished_callback(is_finished_callback)
+        self.runner.set_load_next_section_callback(self.run_section)
 
         self.sections = []
 
@@ -1224,34 +1202,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                 1, True, 1, DAQmx_Val_GroupByChannel, self.timeout_rearm, written, None
             )
 
-    def run_experiment(self, device_name):
-
-        self.from_master_socket.recv()
-
-        while True:
-
-            time.sleep(0.01)
-            if self.wait_table is not None and self.wait_monitor_thread is not None:
-                self.wait_monitor_thread.join()
-
-            self.to_master_socket.send(str.encode(f"fin wait"))
-
-            msg = self.from_master_socket.recv() # load message
-
-            if msg == b'exit':
-                return
-
-            next_section = int(msg.split()[-1])
-            print(f"Next section is {next_section}")
-
-            self.run_section(next_section)
-
-            time.sleep(0.25)
-            print("send ready wait")
-            self.to_master_socket.send(str.encode(f"rdy wait"))
-            msg = self.from_master_socket.recv() # load message
-
-
     def compile_sections(self, h5file):
         
         # Get data from HDF5 file
@@ -1278,34 +1228,37 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         #     full_wait_table,
         #     None
         # ]
-        self.sections = [
-            full_wait_table,
-        ]
+        # self.sections = [
+        #     full_wait_table,
+        # ]
 
-        # timestamps = []
-        # for j in range(len(jumps)):
-        #     timestamps.append(jumps[j]["time"])
-        #     timestamps.append(jumps[j]["to_time"])
 
-        # timestamps.append(0)
-        # timestamps.append(end_time)
+        dtypes = full_wait_table.dtype
 
-        # timestamps = sorted(set(timestamps))
+        timestamps = []
+        for j in range(len(jumps)):
+            timestamps.append(jumps[j]["time"])
+            timestamps.append(jumps[j]["to_time"])
 
-        # print(timestamps)
+        timestamps.append(0)
+        timestamps.append(end_time)
 
-        # self.sections = []
-        # for i in range(len(timestamps)-1):
-        #     print(f"Build section {i}")
-        #     section_wait_table = []
-        #     for w in full_wait_table:
-        #         if timestamps[i] <= w['time'] < timestamps[i+1]:
-        #             section_wait_table.append(w)
+        timestamps = sorted(set(timestamps))
 
-        #     if len(section_wait_table) > 0:
-        #         self.sections.append(pd.DataFrame(data=section_wait_table, columns=["label", "time", "timeout"]))
-        #     else:
-        #         self.sections.append(None)
+        print(timestamps)
+
+        self.sections = []
+        for i in range(len(timestamps)-1):
+            print(f"Build section {i}")
+            section_wait_table = []
+            for w in full_wait_table:
+                if timestamps[i] <= w['time'] < timestamps[i+1]:
+                    section_wait_table.append(w)
+
+            if len(section_wait_table) > 0:
+                self.sections.append(np.array(section_wait_table, dtype=dtypes))
+            else:
+                self.sections.append(None)
 
     def run_section(self, section):
 
@@ -1333,8 +1286,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
         self.run_section(0)
 
-        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
-        self.run_thread.start()
+        self.runner.send_buffered()
 
         self.logger.debug('finished transition to buffered')
 
@@ -1386,9 +1338,11 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         return True
 
     def abort_buffered(self):
+        self.runner.abort()
         return self.transition_to_manual(True)
 
     def abort_transition_to_buffered(self):
+        self.runner.abort()
         return self.transition_to_manual(True)
 
     def program_manual(self, values):

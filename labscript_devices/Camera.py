@@ -169,6 +169,7 @@ class CameraTab(DeviceTab):
         worker_initialisation_kwargs = {
             'port': self.ui.port_label.text(),
             'jump_address': str(self.settings['connection_table'].jump_device_address),
+            'device_name': self.device_name
         }
         self.create_worker("main_worker", CameraWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
@@ -219,7 +220,7 @@ class CameraWorker(Worker):
             response = zprocess.zmq_get_string(self.port, self.host, data='hello')
             if response == 'hello':
                 
-                response = zprocess.zmq_get_string(self.port, self.host, data=f'con {self.jump_address}')
+                response = zprocess.zmq_get_string(self.port, self.host, data=f'con {self.jump_address} {self.device_name}')
                 if response == 'ok':
                     return True
             else:

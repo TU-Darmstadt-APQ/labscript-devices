@@ -3,7 +3,6 @@ from labscript import config, Device, IntermediateDevice, StaticAnalogQuantity, 
 import numpy as np
 import labscript_utils.h5_lock
 import h5py
-import threading
 
 
 class HP53131A(IntermediateDevice):
@@ -41,10 +40,7 @@ class HP53131ATab(DeviceTab):
         self.GPIB_address = str(self.settings['connection_table'].find_by_name(self.device_name).BLACS_connection)
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {
-            'GPIB_address': self.GPIB_address,
-            'jump_address': str(self.settings['connection_table'].jump_device_address),
-        }
+        worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address}
         self.create_worker("main_worker", HP53131AWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
@@ -71,8 +67,6 @@ class HP53131AWorker(GPIBWorker):
         pass
 
     def transition_to_manual(self, *args, **kwargs):
-        if self.run_thread is not None:
-            self.run_thread.join()
         freq = self.GPIB_connection.query(":READ:FREQ?")
 
         with h5py.File(self.h5_file, 'a') as hdf5_file:
@@ -81,30 +75,10 @@ class HP53131AWorker(GPIBWorker):
 
         return True
 
-
-    def run_experiment(self, device_name):
-        self.from_master_socket.recv()
-        while True:
-
-            self.to_master_socket.send(str.encode(f"fin {device_name}"))
-            msg = self.from_master_socket.recv() # load message
-
-            if msg == b'exit':
-                return
-
-            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
-            msg = self.from_master_socket.recv() # load message
-
-
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         self.GPIB_connection.write(":FUNC 'FREQ 1'")
         self.h5_file = h5file
         self.device_name = device_name
-
-        # start run thread
-        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
-        self.run_thread.start()
-
         return {}
 
 

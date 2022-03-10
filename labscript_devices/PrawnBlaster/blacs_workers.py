@@ -19,7 +19,7 @@ import labscript_utils.properties as properties
 import zmq
 import threading
 import numpy as np
-
+from labscript_utils.in_exp_com import RunBaseClass
 
 class PrawnBlasterWorker(Worker):
     """The primary worker for the PrawnBlaster.
@@ -44,8 +44,10 @@ class PrawnBlasterWorker(Worker):
         global zprocess; import zprocess
         self.smart_cache = {}
         self.cached_pll_params = {}
-        self.run_thread = None
         # fmt: on
+        
+        self.runner = RunBaseClass(self.device_name, self.jump_address)
+        self.runner.start()
 
         self.all_waits_finished = zprocess.Event("all_waits_finished", type="post")
         self.wait_durations_analysed = zprocess.Event(
@@ -58,8 +60,6 @@ class PrawnBlasterWorker(Worker):
         self.wait_timeout = None
         self.h5_file = None
         self.started = False
-
-        self.start_event = threading.Event()
 
         self.prawnblaster = serial.Serial(self.com_port, 115200, timeout=1)
         self.serial_lock = threading.Lock()
@@ -77,15 +77,15 @@ class PrawnBlasterWorker(Worker):
                 assert self.prawnblaster.readline().decode() == "ok\r\n"
                 self.prawnblaster.write(b"setinpin %d %d\r\n" % (i, in_pin))
                 assert self.prawnblaster.readline().decode() == "ok\r\n"
-        
-        self.context = zmq.Context()
-        self.from_master_socket = self.context.socket(zmq.SUB)
-        self.to_master_socket = self.context.socket(zmq.PUSH)
 
-        self.from_master_socket.connect(f"tcp://{self.jump_address}:44555")
-        self.to_master_socket.connect(f"tcp://{self.jump_address}:44556")
-
-        self.from_master_socket.subscribe("")
+        self.runner.set_start_callback(self.start_run)
+        def is_finished_callback():
+            run_status, clock_status = self.read_status(True)
+            if run_status == 0:
+                return True
+            return False
+        self.runner.set_is_finished_callback(is_finished_callback)
+        self.runner.set_load_next_section_callback(self.program_clock)
 
         self.sections = []
 
@@ -201,10 +201,9 @@ class PrawnBlasterWorker(Worker):
                 - **clock-status** (int): Clock status code
         """
 
-        if (not Total) and (self.run_thread is not None):
-            if self.run_thread.is_alive():
-                print("run_thread is alive. Dont check status")
-                return 2, 0
+        if (not Total) and (self.runner.state not in ['MANUAL', 'INIT']):
+            print("run_thread is alive. Dont check status", self.runner.state)
+            return 2, 0
 
         with self.serial_lock:
             self.prawnblaster.write(b"status\r\n")
@@ -244,35 +243,6 @@ class PrawnBlasterWorker(Worker):
                 assert self.prawnblaster.readline().decode() == "ok\r\n"
 
         return values
-
-    def run_experiment(self, device_name):
-
-        self.from_master_socket.recv()
-
-        self.start_event.wait()
-        while True:
-            while True:
-                time.sleep(0.001)
-                run_status, clock_status = self.read_status(True)
-                if run_status == 0:
-                    break
-
-            self.to_master_socket.send(str.encode(f"fin {device_name}"))
-
-            msg = self.from_master_socket.recv() # load message
-
-            if msg == b'exit':
-                return
-
-            next_section = int(msg.split()[-1])
-            print(f"Next section is {next_section}")
-
-            self.program_clock(next_section)
-
-            self.to_master_socket.send(str.encode(f"rdy {device_name}"))
-            msg = self.from_master_socket.recv() # load message
-
-            self.start_run()
 
 
     def program_clock(self, section):
@@ -422,7 +392,6 @@ class PrawnBlasterWorker(Worker):
         self.h5_file = h5file  # store reference to h5 file for wait monitor
         self.current_wait = 0  # reset wait analysis
         self.started = False   # Prevent status check from detecting previous wait values
-        self.start_event.clear()
         #                        betwen now and when we actually send the start signal
         # fmt: on
 
@@ -449,9 +418,7 @@ class PrawnBlasterWorker(Worker):
 
         self.program_clock(0)
 
-        self.run_thread = threading.Thread(target=self.run_experiment, args=(device_name,))
-        self.run_thread.start()
-
+        self.runner.send_buffered()
 
         # All outputs end on 0
         final = {}
@@ -472,7 +439,6 @@ class PrawnBlasterWorker(Worker):
 
         # set started = True
         self.started = True
-        self.start_event.set()
 
     def wait_for_trigger(self):
         """When used as a secondary pseudoclock, sets the PrawnBlaster
@@ -509,8 +475,6 @@ class PrawnBlasterWorker(Worker):
         Returns:
             bool: `True` if transition to manual is successful.
         """
-
-        self.run_thread.join()
 
         if self.wait_table is not None:
             with h5py.File(self.h5_file, "a") as hdf5_file:
@@ -555,13 +519,9 @@ class PrawnBlasterWorker(Worker):
     def shutdown(self):
         """Cleanly shuts down the connection to the PrawnBlaster hardware."""
 
+        self.runner.shutdown()
         with self.serial_lock:
             self.prawnblaster.close()
-
-        self.from_master_socket.close()
-        self.to_master_socket.close()
-
-        self.context.term()
 
     def abort_buffered(self):
         """Aborts a currently running buffered execution.
@@ -569,6 +529,7 @@ class PrawnBlasterWorker(Worker):
         Returns:
             bool: `True` is abort is successful.
         """
+        self.runner.abort()
         if not self.is_master_pseudoclock:
             # Only need to send abort signal if we have told the PrawnBlaster to wait
             # for a hardware trigger. Otherwise it's just been programmed with
@@ -588,4 +549,5 @@ class PrawnBlasterWorker(Worker):
         Calls :py:meth:`abort_buffered`.
         """
 
+        self.runner.abort()
         return self.abort_buffered()
