@@ -62,6 +62,8 @@ class PulseBlaster_No_DDS(PulseBlaster):
         total_cut_times.append(self.stop_time)
         total_cut_times = sorted(set(total_cut_times))
 
+        print("jump times", total_cut_times)
+
         for i in range(len(total_cut_times)-1):
             start = total_cut_times[i]
             end = total_cut_times[i+1]

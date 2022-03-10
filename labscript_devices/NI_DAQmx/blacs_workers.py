@@ -564,8 +564,10 @@ class NI_DAQmxOutputWorker(Worker):
 
         return_values = []
         for i in range(len(values)):
-            if min_time <= time[i] < max_time-0.0001:
+            if min_time <= time[i] < max_time:
                 return_values.append(values[i])
+            else:
+                print("Dont process ", time[i], values[i])
         return np.array(return_values)
 
     def compile_sections(self, h5file, device_name):
@@ -1071,6 +1073,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             return read_array
 
     def wait_monitor(self):
+        print("Hello from wait monitor")
         try:
             # Read edge times from the counter input task, indiciating the times of the
             # pulses that occur at the start of the experiment and after every wait. If a
@@ -1086,6 +1089,8 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                     semiperiods = self.read_edges(1, timeout=None)
                 else:
                     semiperiods = self.read_edges(2, timeout=None)
+                print('Experiment started, got edges')
+                start_time = time.time()
                 self.logger.debug('Experiment started, got edges:' + str(semiperiods))
                 # May have been one or two edges, depending on whether the device has
                 # incomplete sample detection. We are only interested in the second one
@@ -1129,7 +1134,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                     # Inform any interested parties that a wait has completed:
                     postdata = _ensure_str(wait['label'])
                     self.wait_completed.post(self.h5_file, data=postdata)
-                    print("Finished wait")
+                    print("Finished wait", start_time - time.time())
                 # Inform any interested parties that waits have all finished:
                 self.logger.debug('All waits finished')
                 self.all_waits_finished.post(self.h5_file)
@@ -1236,18 +1241,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
             end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
 
-
-        # TODO: remove hack :D
-        # self.sections = [
-        #     None,
-        #     full_wait_table,
-        #     None
-        # ]
-        # self.sections = [
-        #     full_wait_table,
-        # ]
-
-
         dtypes = full_wait_table.dtype
 
         timestamps = []
@@ -1288,6 +1281,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         # Not a daemon thread, as it implements wait timeouts - we need it to stay alive
         # if other things die.
         self.wait_monitor_thread.start()
+        print("Start wait monitor thread")
 
         return True
 
@@ -1303,7 +1297,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
         self.runner.send_buffered()
 
-        self.logger.debug('finished transition to buffered')
+        print('finished transition to buffered')
 
         return {}
 

@@ -434,16 +434,17 @@ class PulseBlaster(PseudoclockDevice):
             else:
                 t += instruction['step'] * instruction['reps']
 
-            print(t, instruction)
+            # print(t, instruction)
 
             # Skip instructions that are not in this area
-            if (start is not None) and (start != 0) and (t < start):
+            if (start is not None) and (start != 0) and (t <= start):
                 continue
 
-            if (end is not None) and (t > end+0.00001):
+            if (end is not None) and (t > end+0.001):
                 continue
 
             if instruction == 'WAIT':
+                print("WAIT at ", t)
                 # This is a wait instruction. Repeat the last instruction but with a 100ns delay and a WAIT op code:
                 wait_instruction = pb_inst[-1].copy()
                 wait_instruction['delay'] = 100
