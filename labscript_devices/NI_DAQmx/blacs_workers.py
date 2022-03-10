@@ -277,6 +277,9 @@ class NI_DAQmxOutputWorker(Worker):
         self.AO_all_zero = True
         self.DO_all_zero = True
 
+        self.DO_active = False
+        self.AO_active = False
+
     def stop_tasks(self):
         if self.AO_task is not None:
             self.AO_task.StopTask()
@@ -407,7 +410,9 @@ class NI_DAQmxOutputWorker(Worker):
         """Create the DO task and program in the DO table for a shot. Return a
         dictionary of the final values of each channel in use"""
         if DO_table is None:
+            self.DO_active = False
             return {}
+        self.DO_active = True
         # self.DO_task = Task()
         # written = int32()
         # ports = DO_table.dtype.names
@@ -480,7 +485,12 @@ class NI_DAQmxOutputWorker(Worker):
 
     def program_buffered_AO(self, AO_table):
         if AO_table is None:
+            print("No AO to write")
+            self.AO_active = False
             return {}
+        print("Write AO ", AO_table)
+        #AO_table = AO_table[:-1]
+        self.AO_active = True
         self.AO_task = Task()
         written = int32()
         channels = ', '.join(self.MAX_name + '/' + c for c in AO_table.dtype.names)
@@ -525,6 +535,7 @@ class NI_DAQmxOutputWorker(Worker):
                 npts,
             )
 
+            print(f"write {npts}values to memory.")
             # Write data:
             self.AO_task.WriteAnalogF64(
                 npts,
@@ -551,7 +562,7 @@ class NI_DAQmxOutputWorker(Worker):
 
         return_values = []
         for i in range(len(values)):
-            if min_time <= time[i] <= max_time:
+            if min_time <= time[i] < max_time-0.0001:
                 return_values.append(values[i])
         return np.array(return_values)
 
@@ -1064,8 +1075,10 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             # timeout occurs, pulse the timeout output to force a resume of the master
             # pseudoclock. Save the resulting
             self.logger.debug('Wait monitor thread starting')
+            print('Wait monitor thread starting')
             with self.kill_lock:
                 self.logger.debug('Waiting for start of experiment')
+                print('Waiting for start of experiment')
                 # Wait for the pulse indicating the start of the experiment:
                 if self.incomplete_sample_detection:
                     semiperiods = self.read_edges(1, timeout=None)
