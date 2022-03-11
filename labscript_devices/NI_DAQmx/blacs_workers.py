@@ -49,178 +49,178 @@ LOADING = "lod"
 READY = "rdy"
 EXITED = "ext"
 
-class NI_DAQmxJumpWorker(Worker):
-    def init(self):
+# class NI_DAQmxJumpWorker(Worker):
+#     def init(self):
 
-        # TODO!!!!!!!
-        self.context = zmq.Context()
+#         # TODO!!!!!!!
+#         self.context = zmq.Context()
 
-        self.devices = json.loads(self.devices)
-        self.devices = [str.encode(d) for d in self.devices]
+#         self.devices = json.loads(self.devices)
+#         self.devices = [str.encode(d) for d in self.devices]
 
-        self.from_master_socket = self.context.socket(zmq.PUB)
-        self.from_master_socket.bind(f"tcp://*:44555")
-        self.to_master_socket = self.context.socket(zmq.PULL)
-        self.to_master_socket.bind(f"tcp://*:44556")
+#         self.from_master_socket = self.context.socket(zmq.PUB)
+#         self.from_master_socket.bind(f"tcp://*:44555")
+#         self.to_master_socket = self.context.socket(zmq.PULL)
+#         self.to_master_socket.bind(f"tcp://*:44556")
 
-        self.sections = []
-        self.current_section = 0
-        self.total_past_t = 0
+#         self.sections = []
+#         self.current_section = 0
+#         self.total_past_t = 0
 
-        self.device_states = {}
-        for dev in self.devices:
-            self.device_states[dev] = EXITED
+#         self.device_states = {}
+#         for dev in self.devices:
+#             self.device_states[dev] = EXITED
 
-        self.jump_thread = None
+#         self.jump_thread = None
 
-    def shutdown(self):
+#     def shutdown(self):
         
-        self.from_master_socket.close()
-        self.to_master_socket.close()
-        self.context.term()
+#         self.from_master_socket.close()
+#         self.to_master_socket.close()
+#         self.context.term()
 
 
-    def run_experiment(self):
+#     def run_experiment(self):
 
-        print("Run experiment")
-        jump_counter = 0
-        self.from_master_socket.send(b"init")
+#         print("Run experiment")
+#         jump_counter = 0
+#         self.from_master_socket.send(b"init")
 
-        while True:
+#         while True:
 
-            start_time = time.perf_counter()
+#             start_time = time.perf_counter()
 
-            # Wait for all devices to finish
-            while True:
-                msg = self.to_master_socket.recv()
-                device = msg.split()[-1]
-                self.device_states[device] = FINISHED
+#             # Wait for all devices to finish
+#             while True:
+#                 msg = self.to_master_socket.recv()
+#                 device = msg.split()[-1]
+#                 self.device_states[device] = FINISHED
 
-                print(f"Received {device}")
-                is_done = True
-                for dev in self.device_states:
-                    if self.device_states[dev] != FINISHED:
-                        print(f"Waiting for {dev}")
-                        is_done = False
-                print("")
-                if is_done:
-                    break
+#                 print(f"Received {device}")
+#                 is_done = True
+#                 for dev in self.device_states:
+#                     if self.device_states[dev] != FINISHED:
+#                         print(f"Waiting for {dev}")
+#                         is_done = False
+#                 print("")
+#                 if is_done:
+#                     break
             
-            # Evaluate which section is next
-            next_section = self.current_section + 1
-            if self.sections[self.current_section]['jump']:
-                # TODO: evaluate where to jump. Currently just jump 5 times.
-                if jump_counter < 5:
-                    jump_counter += 1
-                    for s in range(len(self.sections)):
-                        if self.sections[s]['start'] == self.sections[self.current_section]['to_time']:
-                            next_section = s
-                            break
+#             # Evaluate which section is next
+#             next_section = self.current_section + 1
+#             if self.sections[self.current_section]['jump']:
+#                 # TODO: evaluate where to jump. Currently just jump 5 times.
+#                 if jump_counter < 5:
+#                     jump_counter += 1
+#                     for s in range(len(self.sections)):
+#                         if self.sections[s]['start'] == self.sections[self.current_section]['to_time']:
+#                             next_section = s
+#                             break
 
-            if next_section >= len(self.sections):
-                self.from_master_socket.send(b"exit")
-                break # Shot finished
+#             if next_section >= len(self.sections):
+#                 self.from_master_socket.send(b"exit")
+#                 break # Shot finished
 
-            self.current_section = next_section
+#             self.current_section = next_section
 
-            print(f"load {next_section}")
-            # Prepare all devices
-            self.from_master_socket.send(str.encode(f"load {next_section}"))
+#             print(f"load {next_section}")
+#             # Prepare all devices
+#             self.from_master_socket.send(str.encode(f"load {next_section}"))
 
-            # Wait for all devices to be ready
-            while True:
-                msg = self.to_master_socket.recv()
-                device = msg.split()[-1]
-                self.device_states[device] = READY
+#             # Wait for all devices to be ready
+#             while True:
+#                 msg = self.to_master_socket.recv()
+#                 device = msg.split()[-1]
+#                 self.device_states[device] = READY
 
-                print(f"Received {device}")
+#                 print(f"Received {device}")
 
-                is_done = True
-                for dev in self.device_states:
-                    if self.device_states[dev] != READY:
-                        is_done = False
-                        print(f"Waiting for {dev}")
-                print("")
-                if is_done:
-                    break
+#                 is_done = True
+#                 for dev in self.device_states:
+#                     if self.device_states[dev] != READY:
+#                         is_done = False
+#                         print(f"Waiting for {dev}")
+#                 print("")
+#                 if is_done:
+#                     break
 
-            # Send start signal
-            self.from_master_socket.send(b"start")
+#             # Send start signal
+#             self.from_master_socket.send(b"start")
 
-            finish_time = time.perf_counter()
-            t = finish_time - start_time
-            print(f"Loop took {t*1e6:.2f}us")
+#             finish_time = time.perf_counter()
+#             t = finish_time - start_time
+#             print(f"Loop took {t*1e6:.2f}us")
 
-            for dev in self.device_states:
-                self.device_states[dev] = RUNNING
+#             for dev in self.device_states:
+#                 self.device_states[dev] = RUNNING
 
-        print("Finished experiment...")
+#         print("Finished experiment...")
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+#     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
 
-        self.current_section = 0
-        self.total_past_t = 0
+#         self.current_section = 0
+#         self.total_past_t = 0
 
-        for dev in self.devices:
-            self.device_states[dev] = RUNNING
+#         for dev in self.devices:
+#             self.device_states[dev] = RUNNING
 
-        with h5py.File(h5file, 'r') as hdf5_file:
-            jumps = hdf5_file['jumps'][:]
-            master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
-            end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
-            
-        timestamps = []
-        for j in range(len(jumps)):
-            timestamps.append(jumps[j]["time"])
-            timestamps.append(jumps[j]["to_time"])
+#         with h5py.File(h5file, 'r') as hdf5_file:
+#             jumps = hdf5_file['jumps'][:]
+#             master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
+#             end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
 
-        timestamps.append(0)
-        timestamps.append(end_time)
+#         timestamps = []
+#         for j in range(len(jumps)):
+#             timestamps.append(jumps[j]["time"])
+#             timestamps.append(jumps[j]["to_time"])
 
-        timestamps = sorted(set(timestamps))
+#         timestamps.append(0)
+#         timestamps.append(end_time)
 
-        self.sections = []
-        for i in range(len(timestamps)-1):
-            start = timestamps[i]
-            end = timestamps[i+1]
-            jump = False
-            to_time = 0
-            for i in range(len(jumps)):
-                if jumps[i]['time'] == end:
-                    jump = True
-                    to_time = jumps[i]['to_time']
-                    break
-            section = {
-                "start": start,
-                "end": end,
-                "jump": jump,
-                "to_time": to_time
-            }
+#         timestamps = sorted(set(timestamps))
 
-            self.sections.append(section)
+#         self.sections = []
+#         for i in range(len(timestamps)-1):
+#             start = timestamps[i]
+#             end = timestamps[i+1]
+#             jump = False
+#             to_time = 0
+#             for i in range(len(jumps)):
+#                 if jumps[i]['time'] == end:
+#                     jump = True
+#                     to_time = jumps[i]['to_time']
+#                     break
+#             section = {
+#                 "start": start,
+#                 "end": end,
+#                 "jump": jump,
+#                 "to_time": to_time
+#             }
 
-        self.jump_thread = threading.Thread(target=self.run_experiment)
-        self.jump_thread.start()
+#             self.sections.append(section)
 
-        return {}
+#         self.jump_thread = threading.Thread(target=self.run_experiment)
+#         self.jump_thread.start()
+
+#         return {}
 
 
 
-    def transition_to_manual(self, abort=False):
+#     def transition_to_manual(self, abort=False):
 
-        # TODO: stop run thread
+#         # TODO: stop run thread
 
-        self.device_states = {}
-        for dev in self.devices:
-            self.device_states[dev] = EXITED
+#         self.device_states = {}
+#         for dev in self.devices:
+#             self.device_states[dev] = EXITED
 
-        return True
+#         return True
 
-    def abort_transition_to_buffered(self):
-        return self.transition_to_manual(True)
+#     def abort_transition_to_buffered(self):
+#         return self.transition_to_manual(True)
 
-    def abort_buffered(self):
-        return self.transition_to_manual(True)
+#     def abort_buffered(self):
+#         return self.transition_to_manual(True)
 
 
 class NI_DAQmxOutputWorker(Worker):
@@ -237,7 +237,7 @@ class NI_DAQmxOutputWorker(Worker):
         self.runner.start()
 
         def is_finished_callback():
-            WAIT_TIME = 5e-3
+            WAIT_TIME = 0.5
             if self.AO_task is not None:
                 try:
                     self.AO_task.WaitUntilTaskDone(WAIT_TIME)
@@ -490,7 +490,7 @@ class NI_DAQmxOutputWorker(Worker):
             print("No AO to write")
             self.AO_active = False
             return {}
-        print("Write AO ", AO_table)
+        #print("Write AO ", AO_table)
         #AO_table = AO_table[:-1]
         self.AO_active = True
         self.AO_task = Task()
@@ -516,7 +516,7 @@ class NI_DAQmxOutputWorker(Worker):
             AO_table = AO_table[0:1]
 
         if self.static_AO or self.AO_all_zero:
-            print("Write all zeros")
+            #print("Write all zeros")
             # Static AO. Start the task and write data, no timing configuration.
             self.AO_task.StartTask()
             self.AO_task.WriteAnalogF64(
@@ -528,7 +528,7 @@ class NI_DAQmxOutputWorker(Worker):
             # samples. This is required by some devices to determine that the task has
             # completed.
             npts = len(AO_table) - 1
-            print("Write ", npts)
+            #print("Write ", npts)
 
             # Set up timing:
             self.AO_task.CfgSampClkTiming(
@@ -539,7 +539,7 @@ class NI_DAQmxOutputWorker(Worker):
                 npts,
             )
 
-            print(f"write {npts}values to memory.")
+            #print(f"write {npts}values to memory.")
             # Write data:
             self.AO_task.WriteAnalogF64(
                 npts,
@@ -568,8 +568,8 @@ class NI_DAQmxOutputWorker(Worker):
         for i in range(len(values)):
             if min_time <= time[i] <= max_time:
                 return_values.append(values[i])
-            else:
-                print("Dont process ", time[i], values[i])
+            #else:
+                #print("Dont process ", time[i], values[i])
         return np.array(return_values)
 
     def compile_sections(self, h5file, device_name):
@@ -641,7 +641,7 @@ class NI_DAQmxOutputWorker(Worker):
         AO_final_values = self.program_buffered_AO(self.sections[0]['AO_values'])
         DO_final_values = self.program_buffered_DO(self.sections[0]['DO_values'])
 
-        print("Sections", self.sections)
+        #print("Sections", self.sections)
 
         final_values = {}
         final_values.update(DO_final_values)

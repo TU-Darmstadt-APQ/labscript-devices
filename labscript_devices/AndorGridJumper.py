@@ -15,6 +15,7 @@ import h5py
 
 from labscript_utils.in_exp_com import RunMasterClass
 
+
 class AndorGridJumper(Device):
     @set_passed_properties(
         property_names={
@@ -123,12 +124,11 @@ class AndorGridJumperWorker(Worker):
         self.runner.start()
 
         self.runner.set_compute_next_section_callback(self.next_section)
-        
+
         self.jump_counter = 0
         self.sections = []
         self.current_section = 0
         self.total_past_t = 0
-
 
     def program_manual(self, values):
         return {}
@@ -145,10 +145,12 @@ class AndorGridJumperWorker(Worker):
         return True
 
     def get_grid(self):
+        print("GET GRID")
         try:
-            #rid = zprocess.zmq_get(self.port, self.host, 'get_grid', 0.5)
-            # grid[:,0:4]=False
-            grid = []
+            grid = zprocess.zmq_get(self.port, self.host, 'get_grid', 1.5)
+            grid[:, 0:4] = False
+            #grid = []
+            print("GOT GRID")
             return grid
         except:
             # need to add: Make a Fake Exposure
@@ -185,7 +187,6 @@ class AndorGridJumperWorker(Worker):
         else:
             self.current_section = next_section
             return next_section
-
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
 
