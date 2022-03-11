@@ -429,12 +429,16 @@ class PulseBlaster(PseudoclockDevice):
         for k, instruction in enumerate(self.pseudoclock.clock):
 
 
-            if instruction['start'] >= start:
-                started = True
-            else:
-                continue # skip instructions from before
-            if instruction['start'] > end:
+            if not started:
+                if isinstance(instruction, dict) and instruction['start'] >= start:
+                    started = True
+                else:
+                    continue # skip instructions from before
+            if isinstance(instruction, dict) and instruction['start'] > end:
                 break # exited interesting region
+
+            if instruction == 'WAIT':
+                print("WAIT ENCOUNTERED")
 
             # if instruction == 'WAIT':
             #     t += 100e-9

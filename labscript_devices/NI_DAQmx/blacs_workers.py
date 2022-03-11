@@ -516,6 +516,7 @@ class NI_DAQmxOutputWorker(Worker):
             AO_table = AO_table[0:1]
 
         if self.static_AO or self.AO_all_zero:
+            print("Write all zeros")
             # Static AO. Start the task and write data, no timing configuration.
             self.AO_task.StartTask()
             self.AO_task.WriteAnalogF64(
@@ -527,6 +528,7 @@ class NI_DAQmxOutputWorker(Worker):
             # samples. This is required by some devices to determine that the task has
             # completed.
             npts = len(AO_table) - 1
+            print("Write ", npts)
 
             # Set up timing:
             self.AO_task.CfgSampClkTiming(
@@ -564,7 +566,7 @@ class NI_DAQmxOutputWorker(Worker):
 
         return_values = []
         for i in range(len(values)):
-            if min_time <= time[i] < max_time:
+            if min_time <= time[i] <= max_time:
                 return_values.append(values[i])
             else:
                 print("Dont process ", time[i], values[i])
@@ -638,6 +640,8 @@ class NI_DAQmxOutputWorker(Worker):
         # Start first task
         AO_final_values = self.program_buffered_AO(self.sections[0]['AO_values'])
         DO_final_values = self.program_buffered_DO(self.sections[0]['DO_values'])
+
+        print("Sections", self.sections)
 
         final_values = {}
         final_values.update(DO_final_values)
