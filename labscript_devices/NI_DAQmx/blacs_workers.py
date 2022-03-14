@@ -565,10 +565,18 @@ class NI_DAQmxOutputWorker(Worker):
             return None
 
         return_values = []
+        first_time = True
+        first_finish = True
         for i in range(len(values)):
             if min_time <= time[i] <= max_time:
                 return_values.append(values[i])
-            #else:
+                if first_time:
+                    first_time = False
+                    print("start at ", time[i])
+            else:
+                if not first_time and first_finish:
+                    first_finish = False
+                    print("Dont take ", time[i])
                 #print("Dont process ", time[i], values[i])
         return np.array(return_values)
 
@@ -612,13 +620,34 @@ class NI_DAQmxOutputWorker(Worker):
                 "DO_values": self.filter_data_by_time(times_table, DO_table, start, end)
             }
 
-            if section['AO_values'] is not None:
+            if section['AO_values'] is not None and section['AO_values'] is not []:
                 AO_final_values = dict(zip(section['AO_values'].dtype.names, section['AO_values'][-1]))
             # if section['DO_values'] is not None: TODO
             #     DO_final_values = dict(zip(section['DO_values'].dtype.names, section['DO_values'][-1]))
 
-            self.sections.append(section)
+            if section['DO_values'] is not None and section['DO_values'] is not []:
+                # TODO: currently hacky, as we compute this twice. here and when we do program buffered do
+                num_DO = 0
+                port_offset = {}
+                for port_name in self.ports:
+                        port = self.ports[port_name]
+                        if port['supports_buffered']:
+                            port_offset[port_name] = num_DO
+                            num_DO += port['num_lines']
 
+                do_write_data = np.zeros((section['DO_values'].shape[0], num_DO),dtype=np.uint8)
+                for i in range(num_DO):
+                    do_write_data[:,i] = (section['DO_values'] & (1 << i)) >> i
+
+                k = 0
+                for port_name in self.ports:
+                    port = self.ports[port_name]
+                    if port['supports_buffered']:
+                        for j in range(port['num_lines']):
+                            DO_final_values[f'{port_name}/line{j}'] = do_write_data[-1,k]
+                            k += 1
+
+            self.sections.append(section)
 
         return DO_final_values, AO_final_values
 
@@ -634,12 +663,11 @@ class NI_DAQmxOutputWorker(Worker):
         self.set_mirror_clock_terminal_connected(True)
 
         # Compile all sections:
-        self.compile_sections(h5file, device_name)
-
+        DO_final_values, AO_final_values = self.compile_sections(h5file, device_name)
 
         # Start first task
-        AO_final_values = self.program_buffered_AO(self.sections[0]['AO_values'])
-        DO_final_values = self.program_buffered_DO(self.sections[0]['DO_values'])
+        self.program_buffered_AO(self.sections[0]['AO_values'])
+        self.program_buffered_DO(self.sections[0]['DO_values'])
 
         #print("Sections", self.sections)
 

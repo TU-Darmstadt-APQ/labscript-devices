@@ -432,9 +432,11 @@ class PulseBlaster(PseudoclockDevice):
             if not started:
                 if isinstance(instruction, dict) and instruction['start'] >= start:
                     started = True
+                    print("Start section at ", instruction['start'])
                 else:
                     continue # skip instructions from before
             if isinstance(instruction, dict) and instruction['start'] > end:
+                print("Dont run instruction at ", instruction['start'])
                 break # exited interesting region
 
             if instruction == 'WAIT':

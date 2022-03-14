@@ -160,29 +160,48 @@ class AndorGridJumperWorker(Worker):
         self.runner.send_start()
 
     def next_section(self):
-        max_jumps = 5
+        max_jumps = 20
 
         # Evaluate which section is next
         next_section = self.current_section + 1
+
+        # Must be called every time currently... :/
+        grid = self.get_grid()
+        print(grid)
+
         if self.sections[self.current_section]['jump']:
             # TODO: evaluate where to jump. Currently just jump 5 times.
 
             print("Jump decision")
 
-            grid = self.get_grid()
-            print(grid)
+            # check all positions
+            res_grid = [
+                [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 0, 1, 0, 1],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 1, 0, 1],
+                [0, 0, 0, 0, 0, 0, 0, 1, 0],
+            ]
+            grid_full = np.all(grid & res_grid == res_grid)
+            print(f"Grid full: {grid_full}")
 
-            if self.jump_counter < max_jumps:
-                for s in range(len(self.sections)):
-                    if self.sections[s]['start'] == self.sections[self.current_section]['to_time']:
-                        next_section = s
-                        self.jump_counter += 1
-                        break
+            should_jump = not grid_full
+            if self.sections[self.current_section]['inverted']:
+                print("INVERTED",)
+                should_jump = not should_jump
+
+            if should_jump and self.jump_counter < max_jumps:
+                next_section = self.sections[self.current_section]['to_section']
+                self.jump_counter += 1
 
         print("next section: ", next_section)
         print("jump_counter: ", self.jump_counter)
 
+        print(len(self.sections))
         if next_section >= len(self.sections):
+            print("exit!")
             return -1
         else:
             self.current_section = next_section
@@ -216,7 +235,7 @@ class AndorGridJumperWorker(Worker):
             jump = False
             to_time = 0
             for i in range(len(jumps)):
-                if jumps[i]['time'] == end:
+                if end - 0.00001 < jumps[i]['time'] < end + 0.00001:
                     jump = True
                     to_time = jumps[i]['to_time']
                     break
@@ -224,10 +243,25 @@ class AndorGridJumperWorker(Worker):
                 "start": start,
                 "end": end,
                 "jump": jump,
-                "to_time": to_time
+                "inverted": False,
+                "to_time": to_time,
             }
 
             self.sections.append(section)
+
+        self.sections[0]["inverted"] = True  # TODO: move to experiment file
+
+        for i in range(len(self.sections)):
+            to_time = self.sections[i]['to_time']
+            to_section = i
+            for j in range(len(self.sections)):
+                if to_time - 0.00001 < self.sections[j]['start'] < to_time + 0.00001:
+                    to_section = j
+                    break
+
+            self.sections[i]['to_section'] = to_section
+
+        print(self.sections)
 
         self.runner.send_buffered()
 
