@@ -503,20 +503,20 @@ class PulseblasterNoDDSWorker(Worker):
                 "running": True,
                 "waiting": False,
                 "scanning": False
-            }, self.waits_pending, False # TODO: check
+            }, 0, False # TODO: check
 
-        if self.waits_pending:
-            try:
-                self.all_waits_finished.wait(self.h5file, timeout=0)
-                self.waits_pending = False
-            except zprocess.TimeoutError:
-                pass
+        # if self.waits_pending:
+        #     try:
+        #         self.all_waits_finished.wait(self.h5file, timeout=0)
+        #         self.waits_pending = False
+        #     except zprocess.TimeoutError:
+        #         pass
         if self.time_based_shot_end_time is not None:
             import time
             time_based_shot_over = time.time() > self.time_based_shot_end_time
         else:
             time_based_shot_over = None
-        return pb_read_status(), self.waits_pending, time_based_shot_over
+        return pb_read_status(), 0, time_based_shot_over
         
     def transition_to_manual(self):
 
