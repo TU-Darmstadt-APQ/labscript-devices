@@ -495,6 +495,7 @@ class PulseblasterNoDDSWorker(Worker):
             return return_values
             
     def check_status(self, force=False):
+        # TODO write self.waits_pending depending on the current
         if not force and (self.runner.state not in ['MANUAL', 'INIT']):
             return {
                 "stopped": False,
