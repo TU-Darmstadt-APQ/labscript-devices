@@ -147,9 +147,9 @@ class AndorGridJumperWorker(Worker):
     def get_grid(self):
         print("GET GRID")
         try:
-            #grid = zprocess.zmq_get(self.port, self.host, 'get_grid', 1.5)
-            #grid[:, 0:4] = False
-            grid = []
+            grid = zprocess.zmq_get(self.port, self.host, 'get_grid', 1.5)
+            grid[:, 0:4] = False
+            # grid = []
             print("GOT GRID")
             return grid
         except:
