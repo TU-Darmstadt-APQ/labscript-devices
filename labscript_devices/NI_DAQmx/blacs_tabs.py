@@ -14,6 +14,7 @@ import labscript_utils.h5_lock
 import h5py
 from labscript_utils import dedent
 import json
+import os
 
 from blacs.device_base_class import DeviceTab
 from .utils import split_conn_AO, split_conn_DO
@@ -46,6 +47,76 @@ class MyCombiButton(QPushButton):
 
 
 class NI_DAQmxTab(DeviceTab):
+
+    def __init__(self, *args, **kwargs):
+        self.combi_btns = []
+        self.exp_config = LabConfig()
+        DeviceTab.__init__(self, *args, **kwargs)
+
+    def load_output_combinations(self, path):  # added by Rene Kolb
+        config_filepath = os.path.join(path, self._device_name + '.cfg')
+        self.logger.info("loading combinations: " + str(config_filepath))
+        if not os.path.exists(config_filepath):
+            return {}  # the file does not exist, so no combinations exist
+
+        parser = SafeConfigParser()
+        parser.read(config_filepath)
+
+        if not 'combinations' in parser:
+            return {}  # no combinations found
+
+        combis = {}
+
+        for key, value in parser['combinations'].items():
+            # a value has the form:
+            # device:state, device:state, ...
+            device_and_states = value.split(',')  # split the
+
+            devices_list = []
+            for ds in device_and_states:
+                splitted = ds.split(':')
+                if len(splitted) == 1:
+                    device = splitted[0].strip()  # crop whitespaces
+                    state = 1
+                elif len(splitted) == 2:
+                    device = splitted[0].strip()  # crop whitespaces
+                    state = int(splitted[1])
+                else:
+                    raise Exception("Wrong amount of arguments.")
+                devices_list.append((device, state))
+
+            combis[key] = devices_list
+
+        return combis
+
+    def replace_connection_name_with_hardware_name(self, state_list, DO_list):  # added by RK
+        result = []
+        for con_name, state in state_list:
+            for hw_name, do_item in DO_list.items():
+                if do_item._connection_name == con_name:
+                    result.append((hw_name, state))
+                    break
+        return result
+
+    def initialise_combinations_buttons(self):
+        path = os.path.dirname(self.exp_config.get('paths', 'connection_table_py'))
+        self.combinations = self.load_output_combinations(path)
+        if self.combinations:  # if it's not empty
+            favorit_group = QWidget()
+            toolpalettegroup = ToolPaletteGroup(favorit_group)
+            toolpalette = toolpalettegroup.append_new_palette("Combinations")
+            for key, value in self.combinations.items():
+                replaced_value = self.replace_connection_name_with_hardware_name(value, self._DO)
+                btn = MyCombiButton(key, self, replaced_value)
+                btn.setCheckable(True)
+                self.combi_btns.append(btn)
+                toolpalette.addWidget(btn, True)
+
+            # add widgets for the combinations
+            layout = self.get_tab_layout()
+            layout.addWidget(favorit_group)
+            layout.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.MinimumExpanding))
+
     def initialise_GUI(self):
         # Get capabilities from connection table properties:
         connection_table = self.settings['connection_table']
@@ -133,6 +204,7 @@ class NI_DAQmxTab(DeviceTab):
         # Create widgets for outputs defined so far (i.e. analog outputs only)
         DDS_widgets, AO_widgets, DO_widgets, AI_widgets = self.auto_create_widgets(create_analog_in=True)
 
+        self.initialise_combinations_buttons()
         # now create the digital output objects one port at a time
         for _, DO_prop in DO_proplist:
             self.create_digital_outputs(DO_prop)
