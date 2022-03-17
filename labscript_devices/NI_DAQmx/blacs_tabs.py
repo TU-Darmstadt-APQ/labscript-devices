@@ -204,11 +204,11 @@ class NI_DAQmxTab(DeviceTab):
         # Create widgets for outputs defined so far (i.e. analog outputs only)
         DDS_widgets, AO_widgets, DO_widgets, AI_widgets = self.auto_create_widgets(create_analog_in=True)
 
-        self.initialise_combinations_buttons()
         # now create the digital output objects one port at a time
         for _, DO_prop in DO_proplist:
             self.create_digital_outputs(DO_prop)
 
+        self.initialise_combinations_buttons()
         # Manually create the digital output widgets so they are grouped separately
         DO_widgets_by_port = {}
         for port_str, DO_prop in DO_proplist:
