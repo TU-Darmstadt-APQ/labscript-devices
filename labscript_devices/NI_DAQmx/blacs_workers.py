@@ -41,186 +41,8 @@ from .utils import split_conn_port, split_conn_DO, split_conn_AI
 from .daqmx_utils import incomplete_sample_detection
 
 from labscript_utils.in_exp_com import RunBaseClass
-    
+from labscript_utils.labconfig import LabConfig
 
-RUNNING = "run"
-FINISHED = "fin"
-LOADING = "lod"
-READY = "rdy"
-EXITED = "ext"
-
-# class NI_DAQmxJumpWorker(Worker):
-#     def init(self):
-
-#         # TODO!!!!!!!
-#         self.context = zmq.Context()
-
-#         self.devices = json.loads(self.devices)
-#         self.devices = [str.encode(d) for d in self.devices]
-
-#         self.from_master_socket = self.context.socket(zmq.PUB)
-#         self.from_master_socket.bind(f"tcp://*:44555")
-#         self.to_master_socket = self.context.socket(zmq.PULL)
-#         self.to_master_socket.bind(f"tcp://*:44556")
-
-#         self.sections = []
-#         self.current_section = 0
-#         self.total_past_t = 0
-
-#         self.device_states = {}
-#         for dev in self.devices:
-#             self.device_states[dev] = EXITED
-
-#         self.jump_thread = None
-
-#     def shutdown(self):
-        
-#         self.from_master_socket.close()
-#         self.to_master_socket.close()
-#         self.context.term()
-
-
-#     def run_experiment(self):
-
-#         print("Run experiment")
-#         jump_counter = 0
-#         self.from_master_socket.send(b"init")
-
-#         while True:
-
-#             start_time = time.perf_counter()
-
-#             # Wait for all devices to finish
-#             while True:
-#                 msg = self.to_master_socket.recv()
-#                 device = msg.split()[-1]
-#                 self.device_states[device] = FINISHED
-
-#                 print(f"Received {device}")
-#                 is_done = True
-#                 for dev in self.device_states:
-#                     if self.device_states[dev] != FINISHED:
-#                         print(f"Waiting for {dev}")
-#                         is_done = False
-#                 print("")
-#                 if is_done:
-#                     break
-            
-#             # Evaluate which section is next
-#             next_section = self.current_section + 1
-#             if self.sections[self.current_section]['jump']:
-#                 # TODO: evaluate where to jump. Currently just jump 5 times.
-#                 if jump_counter < 5:
-#                     jump_counter += 1
-#                     for s in range(len(self.sections)):
-#                         if self.sections[s]['start'] == self.sections[self.current_section]['to_time']:
-#                             next_section = s
-#                             break
-
-#             if next_section >= len(self.sections):
-#                 self.from_master_socket.send(b"exit")
-#                 break # Shot finished
-
-#             self.current_section = next_section
-
-#             print(f"load {next_section}")
-#             # Prepare all devices
-#             self.from_master_socket.send(str.encode(f"load {next_section}"))
-
-#             # Wait for all devices to be ready
-#             while True:
-#                 msg = self.to_master_socket.recv()
-#                 device = msg.split()[-1]
-#                 self.device_states[device] = READY
-
-#                 print(f"Received {device}")
-
-#                 is_done = True
-#                 for dev in self.device_states:
-#                     if self.device_states[dev] != READY:
-#                         is_done = False
-#                         print(f"Waiting for {dev}")
-#                 print("")
-#                 if is_done:
-#                     break
-
-#             # Send start signal
-#             self.from_master_socket.send(b"start")
-
-#             finish_time = time.perf_counter()
-#             t = finish_time - start_time
-#             print(f"Loop took {t*1e6:.2f}us")
-
-#             for dev in self.device_states:
-#                 self.device_states[dev] = RUNNING
-
-#         print("Finished experiment...")
-
-#     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
-
-#         self.current_section = 0
-#         self.total_past_t = 0
-
-#         for dev in self.devices:
-#             self.device_states[dev] = RUNNING
-
-#         with h5py.File(h5file, 'r') as hdf5_file:
-#             jumps = hdf5_file['jumps'][:]
-#             master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
-#             end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
-
-#         timestamps = []
-#         for j in range(len(jumps)):
-#             timestamps.append(jumps[j]["time"])
-#             timestamps.append(jumps[j]["to_time"])
-
-#         timestamps.append(0)
-#         timestamps.append(end_time)
-
-#         timestamps = sorted(set(timestamps))
-
-#         self.sections = []
-#         for i in range(len(timestamps)-1):
-#             start = timestamps[i]
-#             end = timestamps[i+1]
-#             jump = False
-#             to_time = 0
-#             for i in range(len(jumps)):
-#                 if jumps[i]['time'] == end:
-#                     jump = True
-#                     to_time = jumps[i]['to_time']
-#                     break
-#             section = {
-#                 "start": start,
-#                 "end": end,
-#                 "jump": jump,
-#                 "to_time": to_time
-#             }
-
-#             self.sections.append(section)
-
-#         self.jump_thread = threading.Thread(target=self.run_experiment)
-#         self.jump_thread.start()
-
-#         return {}
-
-
-
-#     def transition_to_manual(self, abort=False):
-
-#         # TODO: stop run thread
-
-#         self.device_states = {}
-#         for dev in self.devices:
-#             self.device_states[dev] = EXITED
-
-#         return True
-
-#     def abort_transition_to_buffered(self):
-#         return self.transition_to_manual(True)
-
-#     def abort_buffered(self):
-#         return self.transition_to_manual(True)
 
 
 class NI_DAQmxOutputWorker(Worker):
@@ -759,6 +581,12 @@ class NI_DAQmxAcquisitionWorker(Worker):
         self.buffered_rate = None
         self.buffered_chans = None
 
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.PUB)
+        exp_config = LabConfig()
+        broker_sub_port = int(exp_config.get('ports', 'BLACS_Broker_Sub'))
+        self.socket.connect("tcp://127.0.0.1:%d" % broker_sub_port)
+
         # Hard coded for now. Perhaps we will add functionality to enable
         # and disable inputs in manual mode, and adjust the rate:
         self.manual_mode_chans = self.AI_chans
@@ -774,6 +602,8 @@ class NI_DAQmxAcquisitionWorker(Worker):
     def shutdown(self):
         if self.task is not None:
             self.stop_task()
+        self.socket.close()
+        self.context.term()
 
     def read(self, task_handle, event_type, num_samples, callback_data=None):
         """Called as a callback by DAQmx while task is running. Also called by us to get
@@ -800,7 +630,12 @@ class NI_DAQmxAcquisitionWorker(Worker):
                 self.acquired_data.append(data)
             else:
                 # TODO: Send it to the broker thingy.
-                pass
+                # print("data", self.read_array[:,-1], self.read_array.shape)
+                # print("manual_mode_chans", self.manual_mode_chans)
+                #print("manual_mode_chans", np.split(self.read_array, len(self.manual_mode_chans), axis=1))
+                # channels_and_data = zip(map(lambda x: x.split("/")[1], self.manual_mode_chans), np.split(self.read_array, len(self.manual_mode_chans)))
+                for i, channel in enumerate(self.manual_mode_chans):
+                    self.socket.send_multipart(["{} {}\0".format(self.device_name,channel).encode('utf-8'), np.mean(self.read_array, 0)[i]]) # Only send mean for each channel
         return 0
 
     def start_task(self, chans, rate):

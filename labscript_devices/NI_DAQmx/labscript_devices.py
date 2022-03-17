@@ -81,7 +81,7 @@ class NI_DAQmx(IntermediateDevice):
                 "wait_monitor_minimum_pulse_width",
                 "wait_monitor_supports_wait_completed_events",
             ],
-            "device_properties": ["acquisition_rate","start_delay_ticks"],
+            "device_properties": ["acquisition_rate", "start_delay_ticks"],
         }
     )
     def __init__(
@@ -151,7 +151,7 @@ class NI_DAQmx(IntermediateDevice):
                 these.
             AO_range (iterable, optional): A `[Vmin, Vmax]` pair that sets the analog
                 output voltage range for all analog outputs.
-            max_AI_multi_chan_rate (float, optional): Max supported analog input 
+            max_AI_multi_chan_rate (float, optional): Max supported analog input
                 sampling rate when using multiple channels.
             max_AI_single_chan_rate (float, optional): Max supported analog input
                 sampling rate when only using a single channel.
@@ -226,10 +226,10 @@ class NI_DAQmx(IntermediateDevice):
                     scripts or define the `AI_Term_Cfg` kwarg for your device.
                     """
                 warnings.warn(dedent(msg.format(self.description)), FutureWarning)
-            self.AI_chans = [key for key,val in AI_term_cfg.items() if self.AI_term in val]
+            self.AI_chans = [key for key, val in AI_term_cfg.items() if self.AI_term in val]
             if not len(self.AI_chans):
                 msg = """AI termination {0} not supported for {1}."""
-                raise LabscriptError(dedent(msg.format(AI_term,self.description)))
+                raise LabscriptError(dedent(msg.format(AI_term, self.description)))
             if AI_term == 'Diff':
                 self.AI_range = AI_range_Diff
             if AI_start_delay is None:
@@ -440,10 +440,10 @@ class NI_DAQmx(IntermediateDevice):
         num_DO = 0
         port_offset = {}
         for port_name in self.ports:
-                port = self.ports[port_name]
-                if port['supports_buffered']:
-                    port_offset[port_name] = num_DO
-                    num_DO += port['num_lines']
+            port = self.ports[port_name]
+            if port['supports_buffered']:
+                port_offset[port_name] = num_DO
+                num_DO += port['num_lines']
         outputarray = [0] * num_DO
 
         for connection, output in digitals.items():
@@ -463,7 +463,10 @@ class NI_DAQmx(IntermediateDevice):
             #     bits_by_port[port] = [0] * int_type_nbits
             # bits_by_port[port][line] = output.raw_output
 
-        bits = bitfield(outputarray, dtype=np.uint32) # TODO: change np.uint32
+        if num_DO in _ints.keys():
+            bits = bitfield(outputarray, dtype=_ints[num_DO])
+        else:
+            bits = bitfield(outputarray, dtype=np.uint32)
         return bits
 
         # dtypes = [columns[port] for port in sorted(columns)]
@@ -620,7 +623,7 @@ class NI_DAQmx(IntermediateDevice):
         if AI_table is not None:
             grp.create_dataset('AI', data=AI_table, compression=config.compression)
 
-        if DO_table is not None: # Table must be non empty
+        if DO_table is not None:  # Table must be non empty
             # construct a single string that has each port and line distribution separated by commas
             # this should coincide with the convention used by the create/write functions in the DAQmx library
             ports_str = ""
@@ -629,10 +632,10 @@ class NI_DAQmx(IntermediateDevice):
                 if port['supports_buffered']:
                     ports_str = f'{ports_str}{self.MAX_name}/{port_name}/line0:{port["num_lines"]-1},'
             if ports_str != "":
-                ports_str = ports_str[:-1] # delete final comma in string
-            self.set_property('digital_lines',(ports_str),location='device_properties')
+                ports_str = ports_str[:-1]  # delete final comma in string
+            self.set_property('digital_lines', (ports_str), location='device_properties')
         else:
-            self.set_property('digital_lines',(''),location='device_properties')
+            self.set_property('digital_lines', (''), location='device_properties')
 
 
 from .models import *
