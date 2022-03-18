@@ -120,15 +120,25 @@ class AndorGridJumperTab(DeviceTab):
 class AndorGridJumperWorker(Worker):
     def init(self):
 
+        self.h5 = None
+
+        self.transition_times = []
+        self.run_times = []
+
         self.runner = RunMasterClass()
         self.runner.start()
 
         self.runner.set_compute_next_section_callback(self.next_section)
+        self.runner.set_transition_time_callback(lambda x: self.transition_times.append(x))
+        self.runner.set_run_time_callback(lambda x: self.run_times.append(x))
 
-        self.jump_counter = 0
         self.sections = []
         self.current_section = 0
-        self.total_past_t = 0
+
+        self.last_grid = [[]]
+
+        self.section_history = []
+        self.jump_history = []
 
     def program_manual(self, values):
         return {}
@@ -144,13 +154,18 @@ class AndorGridJumperWorker(Worker):
         self.get_grid()
         return True
 
-    def get_grid(self):
-        print("GET GRID")
+    def get_grid(self, reuse_grid=False, times=1):
+        if reuse_grid:
+            print("REUSE!")
+            return self.last_grid
+
         try:
-            grid = zprocess.zmq_get(self.port, self.host, 'get_grid', 1.5)
-            grid[:, 0:4] = False
-            # grid = []
-            print("GOT GRID")
+            for i in range(times):  # HACK TO REMOVE TOO MANY GRIDS...
+                grid = zprocess.zmq_get(self.port, self.host, 'get_grid', 1.5)
+            #grid[:, 0:4] = False
+
+            self.last_grid = grid
+
             return grid
         except:
             # need to add: Make a Fake Exposure
@@ -160,44 +175,42 @@ class AndorGridJumperWorker(Worker):
         self.runner.send_start()
 
     def next_section(self):
-        max_jumps = 20
-
         # Evaluate which section is next
         next_section = self.current_section + 1
 
-        # Must be called every time currently... :/
-        grid = self.get_grid()
-        print(grid)
+        jump_decision = {
+            'executed_jump': False,
+            'to_label': 'TODO',
+            'prev_jump_count': self.sections[self.current_section]['jump_counter'],
+            'is_jump': False,
+            'jump_cond': False,
+            'jump_count_limit': self.sections[self.current_section]['max_jumps']
+        }
 
-        if self.sections[self.current_section]['jump']:
-            # TODO: evaluate where to jump. Currently just jump 5 times.
-
+        if self.sections[self.current_section]['is_jump']:
             print("Jump decision")
 
-            # check all positions
-            res_grid = [
-                [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 1, 0],
-                [0, 0, 0, 0, 0, 0, 1, 0, 1],
-                [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 1, 0, 1],
-                [0, 0, 0, 0, 0, 0, 0, 1, 0],
-            ]
+            grid = self.get_grid(self.sections[self.current_section]['reuse_grid'], self.sections[self.current_section]['get_grid_times'])
+            print(grid)
+            res_grid = self.sections[self.current_section]['grid']
             grid_full = np.all(grid & res_grid == res_grid)
             print(f"Grid full: {grid_full}")
 
-            should_jump = not grid_full
+            should_jump = grid_full
             if self.sections[self.current_section]['inverted']:
-                print("INVERTED",)
                 should_jump = not should_jump
 
-            if should_jump and self.jump_counter < max_jumps:
+            jump_decision['jump_cond'] = should_jump
+            if should_jump and self.sections[self.current_section]['jump_counter'] < self.sections[self.current_section]['max_jumps']:
+                jump_decision['executed_jump'] = True
                 next_section = self.sections[self.current_section]['to_section']
-                self.jump_counter += 1
+                self.sections[self.current_section]['jump_counter'] += 1
 
         print("next section: ", next_section)
-        print("jump_counter: ", self.jump_counter)
+        print("jump_counter: ", self.sections[self.current_section]['jump_counter'])
+
+        self.section_history.append(next_section)
+        self.jump_history.append(jump_decision)
 
         print(len(self.sections))
         if next_section >= len(self.sections):
@@ -209,9 +222,15 @@ class AndorGridJumperWorker(Worker):
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
 
+        self.h5 = h5file
+
         self.current_section = 0
-        self.total_past_t = 0
-        self.jump_counter = 0
+        self.section_history = [0]
+        self.jump_history = []
+
+        self.transition_times = []
+        self.run_times = []
+        self.last_grid = [[]]
 
         with h5py.File(h5file, 'r') as hdf5_file:
             jumps = hdf5_file['jumps'][:]
@@ -232,24 +251,52 @@ class AndorGridJumperWorker(Worker):
         for i in range(len(timestamps) - 1):
             start = timestamps[i]
             end = timestamps[i + 1]
-            jump = False
-            to_time = 0
+
+            jump = None
             for i in range(len(jumps)):
                 if end - 0.00001 < jumps[i]['time'] < end + 0.00001:
-                    jump = True
-                    to_time = jumps[i]['to_time']
+                    jump = jumps[i]
                     break
-            section = {
-                "start": start,
-                "end": end,
-                "jump": jump,
-                "inverted": False,
-                "to_time": to_time,
-            }
+
+            if jump is not None:
+                jump_data = json.loads(jump['data'])
+                inverted = False
+                if 'inverted' in jump_data:
+                    inverted = jump_data['inverted']
+                reuse_grid = False
+                if 'reuse_grid' in jump_data:
+                    reuse_grid = jump_data['reuse_grid']
+                get_grid_times = 1
+                if 'get_grid_times' in jump_data:
+                    get_grid_times = jump_data['get_grid_times']
+                grid = jump_data['grid']
+
+                section = {
+                    "start": start,
+                    "end": end,
+                    "is_jump": True,
+                    "inverted": inverted,
+                    "reuse_grid": reuse_grid,
+                    "max_jumps": jump['max_jumps'],
+                    "get_grid_times": get_grid_times,
+                    "jump_counter": 0,
+                    "grid": np.array(grid),
+                    "to_time": jump['to_time'],
+                }
+            else:
+                section = {
+                    "start": start,
+                    "end": end,
+                    "is_jump": False,
+                    "inverted": False,
+                    "reuse_grid": False,
+                    "get_grid_times": 0,
+                    "max_jumps": 0,
+                    "jump_counter": 0,
+                    "to_time": 0,
+                }
 
             self.sections.append(section)
-
-        self.sections[0]["inverted"] = True  # TODO: move to experiment file
 
         for i in range(len(self.sections)):
             to_time = self.sections[i]['to_time']
@@ -268,6 +315,36 @@ class AndorGridJumperWorker(Worker):
         return {}
 
     def transition_to_manual(self, abort=False):
+
+        sections_dtypes = [
+            ('id', int),
+            ('transition_time', float),
+            ('run_time', float)
+        ]
+        jumps_dtypes = [
+            ('executed_jump', bool),
+            ('to_label', 'a256'),
+            ('prev_jump_count', int),
+            ('is_jump', bool),
+            ('jump_cond', bool),
+            ('jump_count_limit', int),
+        ]
+
+        # We ignore the last section as this is section "-1"
+        sections_data = np.empty(len(self.section_history) - 1, dtype=sections_dtypes)
+        for i in range(len(self.section_history) - 1):
+            sections_data[i]['id'] = self.section_history[i]
+            sections_data[i]['transition_time'] = self.transition_times[i]
+            sections_data[i]['run_time'] = self.run_times[i]
+
+        jumps_data = np.empty(len(self.jump_history), dtype=jumps_dtypes)
+        for i in range(len(self.jump_history)):
+            jumps_data[i] = self.jump_history[i]['executed_jump'], self.jump_history[i]['to_label'], self.jump_history[i]['prev_jump_count'], self.jump_history[i]['is_jump'], self.jump_history[i]['jump_cond'], self.jump_history[i]['jump_count_limit']
+
+        with h5py.File(self.h5, 'a') as hdf5_file:
+            hdf5_file.create_dataset('/data/section_history', data=sections_data)
+            hdf5_file.create_dataset('/data/jump_history', data=jumps_data)
+
         return True
 
     def abort_transition_to_buffered(self):
