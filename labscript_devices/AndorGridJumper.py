@@ -180,7 +180,7 @@ class AndorGridJumperWorker(Worker):
 
         jump_decision = {
             'executed_jump': False,
-            'to_label': 'TODO',
+            'jump_label': self.sections[self.current_section]['jump_label'],
             'prev_jump_count': self.sections[self.current_section]['jump_counter'],
             'is_jump': False,
             'jump_cond': False,
@@ -275,6 +275,7 @@ class AndorGridJumperWorker(Worker):
                     "start": start,
                     "end": end,
                     "is_jump": True,
+                    "jump_label": jump['label'],
                     "inverted": inverted,
                     "reuse_grid": reuse_grid,
                     "max_jumps": jump['max_jumps'],
@@ -288,6 +289,7 @@ class AndorGridJumperWorker(Worker):
                     "start": start,
                     "end": end,
                     "is_jump": False,
+                    "jump_label": 'None',
                     "inverted": False,
                     "reuse_grid": False,
                     "get_grid_times": 0,
@@ -323,7 +325,7 @@ class AndorGridJumperWorker(Worker):
         ]
         jumps_dtypes = [
             ('executed_jump', bool),
-            ('to_label', 'a256'),
+            ('jump_label', 'a256'),
             ('prev_jump_count', int),
             ('is_jump', bool),
             ('jump_cond', bool),
@@ -339,7 +341,7 @@ class AndorGridJumperWorker(Worker):
 
         jumps_data = np.empty(len(self.jump_history), dtype=jumps_dtypes)
         for i in range(len(self.jump_history)):
-            jumps_data[i] = self.jump_history[i]['executed_jump'], self.jump_history[i]['to_label'], self.jump_history[i]['prev_jump_count'], self.jump_history[i]['is_jump'], self.jump_history[i]['jump_cond'], self.jump_history[i]['jump_count_limit']
+            jumps_data[i] = self.jump_history[i]['executed_jump'], self.jump_history[i]['jump_label'], self.jump_history[i]['prev_jump_count'], self.jump_history[i]['is_jump'], self.jump_history[i]['jump_cond'], self.jump_history[i]['jump_count_limit']
 
         with h5py.File(self.h5, 'a') as hdf5_file:
             hdf5_file.create_dataset('/data/section_history', data=sections_data)
