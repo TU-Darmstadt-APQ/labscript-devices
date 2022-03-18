@@ -867,6 +867,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.wait_table = None
         self.semiperiods = None
         self.wait_monitor_thread = None
+        self.section_processed_waits = []
 
         # Saved error in case one occurs in the thread, we can raise it later in
         # transition_to_manual:
@@ -1010,6 +1011,8 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             # Save the exception so it can be raised in transition_to_manual
             self.wait_monitor_thread_exception = sys.exc_info()
 
+        self.section_processed_waits.append(self.calc_wait_times())
+
     def send_resume_trigger(self, pulse_width):
         written = int32()
         # Trigger:
@@ -1098,47 +1101,45 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             dataset = hdf5_file['waits']
             if len(dataset) == 0:
                 # There are no waits. Do nothing.
-                self.logger.debug('There are no waits, not transitioning to buffered')
-                self.wait_table = None
-                self.sections = []
-                return {}
-            full_wait_table = dataset[:]
+                full_wait_table = None
+            else:
+                full_wait_table = dataset[:]
 
             jumps = hdf5_file['jumps'][:]
             master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
             end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
 
-        dtypes = full_wait_table.dtype
-
         timestamps = []
         for j in range(len(jumps)):
             timestamps.append(jumps[j]["time"])
             timestamps.append(jumps[j]["to_time"])
-
         timestamps.append(0)
         timestamps.append(end_time)
 
         timestamps = sorted(set(timestamps))
 
-        print(timestamps)
-
         self.sections = []
         for i in range(len(timestamps)-1):
-            print(f"Build section {i}")
-            section_wait_table = []
-            for w in full_wait_table:
-                if timestamps[i] <= w['time'] < timestamps[i+1]:
-                    section_wait_table.append(w)
-
-            if len(section_wait_table) > 0:
-                self.sections.append(np.array(section_wait_table, dtype=dtypes))
-            else:
+            if full_wait_table is None:
                 self.sections.append(None)
+            else:
+                section_wait_table = []
+                for w in full_wait_table:
+                    if timestamps[i] <= w['time'] < timestamps[i+1]:
+                        w['time'] -= timestamps[i] # Adjust time for the subsection
+                        section_wait_table.append(w)
+
+                if len(section_wait_table) > 0:
+                    self.sections.append(np.array(section_wait_table, dtype=full_wait_table.dtype))
+                else:
+                    self.sections.append(None)
 
     def run_section(self, section):
 
         self.wait_table = self.sections[section]
+        self.semiperiods = []
         if self.wait_table is None:
+            self.section_processed_waits.append([])
             return False
         self.start_tasks()
 
@@ -1158,19 +1159,15 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.h5_file = h5file
         self.compile_sections(h5file)
 
-        print(self.sections)
+        self.section_processed_waits = []
 
         self.run_section(0)
-
         self.runner.send_buffered()
-
-        print('finished transition to buffered')
 
         return {}
 
-    def transition_to_manual(self, abort=False):
-        self.logger.debug('transition_to_manual')
-        self.stop_tasks(abort)
+    def calc_wait_times(self, abort=False):
+
         if not abort and self.wait_table is not None:
             # Let's work out how long the waits were. The absolute times of each edge on
             # the wait monitor were:
@@ -1205,6 +1202,44 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             data['timeout'] = self.wait_table['timeout']
             data['duration'] = wait_durations
             data['timed_out'] = waits_timed_out
+
+            return data
+
+    def transition_to_manual(self, abort=False):
+        self.logger.debug('transition_to_manual')
+        self.stop_tasks(abort)
+
+        print(self.section_processed_waits)
+
+        if not abort and self.section_processed_waits is not None:
+
+            processed_waits = 0
+            for pws in self.section_processed_waits:
+                processed_waits += len(pws)
+
+            # Work out how long the waits were, save them, post an event saying so:
+            dtypes = [
+                ('section', int),
+                ('label', 'a256'),
+                ('time', float),
+                ('timeout', float),
+                ('duration', float),
+                ('timed_out', bool),
+            ]
+            data = np.empty(processed_waits, dtype=dtypes)
+
+            j = 0
+            for i, proc_wait_section in enumerate(self.section_processed_waits):
+                for w in proc_wait_section:
+                    data[j]['section'] = i
+                    data[j]['label'] = w['label']
+                    data[j]['time'] = w['time']
+                    data[j]['timeout'] = w['timeout']
+                    data[j]['duration'] = w['duration']
+                    data[j]['timed_out'] = w['timed_out']
+                    j += 1
+
+            print("Save...")
             with h5py.File(self.h5_file, 'a') as hdf5_file:
                 hdf5_file.create_dataset('/data/waits', data=data)
             self.wait_durations_analysed.post(self.h5_file)
