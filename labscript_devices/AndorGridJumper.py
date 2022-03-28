@@ -193,7 +193,11 @@ class AndorGridJumperWorker(Worker):
             grid = self.get_grid(self.sections[self.current_section]['reuse_grid'], self.sections[self.current_section]['get_grid_times'])
             print(grid)
             res_grid = self.sections[self.current_section]['grid']
-            grid_full = np.all(grid & res_grid == res_grid)
+
+            if self.sections[self.current_section]['negative_grid']:
+                grid_full = np.any(grid)  # TODO
+            else:
+                grid_full = np.all(grid & res_grid == res_grid)
             print(f"Grid full: {grid_full}")
 
             should_jump = grid_full
@@ -269,6 +273,9 @@ class AndorGridJumperWorker(Worker):
                 get_grid_times = 1
                 if 'get_grid_times' in jump_data:
                     get_grid_times = jump_data['get_grid_times']
+                negative_grid = False
+                if 'negative_grid' in jump_data:
+                    negative_grid = jump_data['negative_grid']
                 grid = jump_data['grid']
 
                 section = {
@@ -281,6 +288,7 @@ class AndorGridJumperWorker(Worker):
                     "max_jumps": jump['max_jumps'],
                     "get_grid_times": get_grid_times,
                     "jump_counter": 0,
+                    "negative_grid": negative_grid,
                     "grid": np.array(grid),
                     "to_time": jump['to_time'],
                 }
@@ -292,6 +300,7 @@ class AndorGridJumperWorker(Worker):
                     "jump_label": 'None',
                     "inverted": False,
                     "reuse_grid": False,
+                    "negative_grid": False,
                     "get_grid_times": 0,
                     "max_jumps": 0,
                     "jump_counter": 0,
@@ -344,8 +353,9 @@ class AndorGridJumperWorker(Worker):
             jumps_data[i] = self.jump_history[i]['executed_jump'], self.jump_history[i]['jump_label'], self.jump_history[i]['prev_jump_count'], self.jump_history[i]['is_jump'], self.jump_history[i]['jump_cond'], self.jump_history[i]['jump_count_limit']
 
         with h5py.File(self.h5, 'a') as hdf5_file:
-            hdf5_file.create_dataset('/data/section_history', data=sections_data)
-            hdf5_file.create_dataset('/data/jump_history', data=jumps_data)
+            group = hdf5_file['data']
+            group.create_dataset('section_history', data=sections_data)
+            group.create_dataset('jump_history', data=jumps_data)
 
         return True
 
