@@ -18,6 +18,7 @@ from labscript_utils.in_exp_com import RunBaseClass
 
 import threading
 import zmq
+import time
 
 import numpy as np
 
@@ -296,6 +297,7 @@ class PulseblasterNoDDSWorker(Worker):
         self.runner.set_load_next_section_callback(self.program_clock)
 
         self.sections = []
+        self.programming_time = []
         
 
     def program_manual(self,values):
@@ -358,6 +360,7 @@ class PulseblasterNoDDSWorker(Worker):
 
     def program_clock(self, section, initial_values = None, fresh=False):
 
+        start_t = time.perf_counter()
         if self.programming_scheme == 'pb_stop_programming/STOP':
             # Need to ensure device is stopped before programming - or we wont know what line it's on.
             pb_stop()
@@ -437,8 +440,11 @@ class PulseblasterNoDDSWorker(Worker):
             return_values['flag %d'%i] = return_flags[i]
         self.latest_values = return_values
 
+        self.programming_time.append(time.perf_counter()-start_t)
+
     def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
         self.h5file = h5file
+        self.programming_time = []
         
         self.time_based_stop_workaround = False
         self.sections = []
@@ -535,6 +541,9 @@ class PulseblasterNoDDSWorker(Worker):
         self.time_based_stop_workaround = False
         self.time_based_shot_duration = None
         self.time_based_shot_end_time = None
+
+        with h5py.File(self.h5file, 'a') as hdf5_file:
+            hdf5_file.create_dataset(f'/data/programming_time_{self.device_name}', data=self.programming_time)
         
         if done_condition and not waits_pending:
             return True

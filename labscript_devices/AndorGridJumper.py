@@ -1,3 +1,4 @@
+from tracemalloc import start
 import zmq
 import json
 import time
@@ -140,6 +141,8 @@ class AndorGridJumperWorker(Worker):
         self.section_history = []
         self.jump_history = []
 
+        self.next_section_time = []
+
     def program_manual(self, values):
         return {}
 
@@ -176,6 +179,7 @@ class AndorGridJumperWorker(Worker):
 
     def next_section(self):
         # Evaluate which section is next
+        start_t = time.perf_counter()
         next_section = self.current_section + 1
 
         jump_decision = {
@@ -212,7 +216,8 @@ class AndorGridJumperWorker(Worker):
         self.section_history.append(next_section)
         self.jump_history.append(jump_decision)
 
-        print(len(self.sections))
+        t_next_section = time.perf_counter() - start_t
+        self.next_section_time.append(t_next_section)
         if next_section >= len(self.sections):
             print("exit!")
             return -1
@@ -346,6 +351,7 @@ class AndorGridJumperWorker(Worker):
         with h5py.File(self.h5, 'a') as hdf5_file:
             hdf5_file.create_dataset('/data/section_history', data=sections_data)
             hdf5_file.create_dataset('/data/jump_history', data=jumps_data)
+            hdf5_file.create_dataset('/data/time_next_section', data=self.next_section_time)
 
         return True
 
