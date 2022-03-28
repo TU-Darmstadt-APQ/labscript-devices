@@ -78,6 +78,7 @@ class NI_DAQmxOutputWorker(Worker):
             return True
 
         def load_section(next_section):
+            start_t = time.perf_counter()
             if self.current_section != next_section:
                 if not self.static_AO and not self.AO_all_zero:
                     self.AO_task.ClearTask()
@@ -90,6 +91,8 @@ class NI_DAQmxOutputWorker(Worker):
                     self.AO_task.StartTask()
                 if self.DO_task is not None:
                     self.DO_task.StartTask()
+            req_t = time.perf_counter() - start_t
+            self.programming_times.append(req_t)
 
         self.runner.set_is_finished_callback(is_finished_callback)
         self.runner.set_load_next_section_callback(load_section)
@@ -103,6 +106,9 @@ class NI_DAQmxOutputWorker(Worker):
 
         self.DO_active = False
         self.AO_active = False
+
+        self.programming_times = []
+        self.h5_file = None
 
     def stop_tasks(self):
         if self.AO_task is not None:
@@ -477,6 +483,8 @@ class NI_DAQmxOutputWorker(Worker):
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         # Store the initial values in case we have to abort and restore them:
         self.initial_values = initial_values
+        self.programming_times = []
+        self.h5_file = h5file
 
         # Stop the manual mode output tasks, if any:
         self.stop_tasks()
@@ -521,6 +529,10 @@ class NI_DAQmxOutputWorker(Worker):
         if self.DO_task is not None:
             tasks.append([self.DO_task, self.static_DO or self.DO_all_zero, 'DO'])
             self.DO_task = None
+
+        # append programming times for this device
+        with h5py.File(self.h5_file, 'a') as hdf5_file:
+            hdf5_file.create_dataset(f'/data/programming_time_{self.device_name}', data=self.programming_times)
 
         for task, static, name in tasks:
             if not abort:
@@ -856,6 +868,8 @@ class NI_DAQmxAcquisitionWorker(Worker):
 class NI_DAQmxWaitMonitorWorker(Worker):
     def init(self):
 
+        self.programming_times = []
+
         self.all_waits_finished = Event('all_waits_finished', type='post')
         self.wait_durations_analysed = Event('wait_durations_analysed', type='post')
         self.wait_completed = Event('wait_completed', type='post')
@@ -1136,6 +1150,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
     def run_section(self, section):
 
+        start_t = time.perf_counter()
         self.wait_table = self.sections[section]
         self.semiperiods = []
         if self.wait_table is None:
@@ -1151,6 +1166,9 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.wait_monitor_thread.start()
         print("Start wait monitor thread")
 
+        program_t = time.perf_counter() - start_t
+        self.programming_times.append(program_t)
+
         return True
 
 
@@ -1158,6 +1176,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.logger.debug('transition_to_buffered')
         self.h5_file = h5file
         self.compile_sections(h5file)
+        self.programming_times = []
 
         self.section_processed_waits = []
 
@@ -1242,6 +1261,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             print("Save...")
             with h5py.File(self.h5_file, 'a') as hdf5_file:
                 hdf5_file.create_dataset('/data/waits', data=data)
+                hdf5_file.create_dataset(f'/data/programming_time_wait_{self.device_name}', data=self.programming_times)
             self.wait_durations_analysed.post(self.h5_file)
 
         self.h5_file = None
