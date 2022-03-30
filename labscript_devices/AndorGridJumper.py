@@ -237,6 +237,8 @@ class AndorGridJumperWorker(Worker):
         self.section_history = [0]
         self.jump_history = []
 
+        self.next_section_time = []
+
         self.transition_times = []
         self.run_times = []
         self.last_grid = [[]]
@@ -332,6 +334,9 @@ class AndorGridJumperWorker(Worker):
 
     def transition_to_manual(self, abort=False):
 
+        if abort:
+            return True
+
         sections_dtypes = [
             ('id', int),
             ('transition_time', float),
@@ -361,7 +366,7 @@ class AndorGridJumperWorker(Worker):
             group = hdf5_file['data']
             group.create_dataset('section_history', data=sections_data)
             group.create_dataset('jump_history', data=jumps_data)
-            hdf5_file.create_dataset('/data/time_next_section', data=self.next_section_time)
+            group.create_dataset('time_next_section', data=self.next_section_time)
 
         return True
 
