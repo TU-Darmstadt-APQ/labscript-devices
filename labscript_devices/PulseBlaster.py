@@ -423,8 +423,6 @@ class PulseBlaster(PseudoclockDevice):
 
         t = 0
 
-        print("\nSTARTING SECTION ", start, end)
-
         started = False
         for k, instruction in enumerate(self.pseudoclock.clock):
 
@@ -432,32 +430,13 @@ class PulseBlaster(PseudoclockDevice):
             if not started:
                 if isinstance(instruction, dict) and instruction['start'] >= start:
                     started = True
-                    print("Start section at ", instruction['start'])
                 else:
                     continue # skip instructions from before
             if isinstance(instruction, dict) and instruction['start'] > end:
-                print("Dont run instruction at ", instruction['start'])
                 break # exited interesting region
 
-            if instruction == 'WAIT':
-                print("WAIT ENCOUNTERED")
-
-            # if instruction == 'WAIT':
-            #     t += 100e-9
-            # else:
-            #     t += instruction['step'] * instruction['reps']
-
-            # print(t, instruction)
-
-            # Skip instructions that are not in this area
-            # if (start is not None) and (start != 0) and (t <= start):
-            #     continue
-
-            # if (end is not None) and (t > end+0.001):
-            #     continue
 
             if instruction == 'WAIT':
-                print("WAIT at ", t)
                 # This is a wait instruction. Repeat the last instruction but with a 100ns delay and a WAIT op code:
                 wait_instruction = pb_inst[-1].copy()
                 wait_instruction['delay'] = 100

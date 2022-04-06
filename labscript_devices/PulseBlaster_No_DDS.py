@@ -57,13 +57,10 @@ class PulseBlaster_No_DDS(PulseBlaster):
         PseudoclockDevice.generate_code(self, hdf5_file)
         dig_outputs, ignore = self.get_direct_outputs()
 
-        print("jump_times", self.jump_times, "final", self.stop_time)
         total_cut_times = self.jump_times.copy()
         total_cut_times.append(0)
         total_cut_times.append(self.stop_time)
         total_cut_times = sorted(set(total_cut_times))
-
-        print("jump times", total_cut_times)
 
         for i in range(len(total_cut_times)-1):
             start = total_cut_times[i]

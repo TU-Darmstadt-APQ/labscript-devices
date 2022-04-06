@@ -315,11 +315,9 @@ class NI_DAQmxOutputWorker(Worker):
 
     def program_buffered_AO(self, AO_table):
         if AO_table is None:
-            print("No AO to write")
             self.AO_active = False
             return {}
-        #print("Write AO ", AO_table)
-        #AO_table = AO_table[:-1]
+
         self.AO_active = True
         self.AO_task = Task()
         written = int32()
@@ -344,7 +342,6 @@ class NI_DAQmxOutputWorker(Worker):
             AO_table = AO_table[0:1]
 
         if self.static_AO or self.AO_all_zero:
-            #print("Write all zeros")
             # Static AO. Start the task and write data, no timing configuration.
             self.AO_task.StartTask()
             self.AO_task.WriteAnalogF64(
@@ -356,7 +353,6 @@ class NI_DAQmxOutputWorker(Worker):
             # samples. This is required by some devices to determine that the task has
             # completed.
             npts = len(AO_table) - 1
-            #print("Write ", npts)
 
             # Set up timing:
             self.AO_task.CfgSampClkTiming(
@@ -367,7 +363,6 @@ class NI_DAQmxOutputWorker(Worker):
                 npts,
             )
 
-            #print(f"write {npts}values to memory.")
             # Write data:
             self.AO_task.WriteAnalogF64(
                 npts,
@@ -393,19 +388,9 @@ class NI_DAQmxOutputWorker(Worker):
             return None
 
         return_values = []
-        first_time = True
-        first_finish = True
         for i in range(len(values)):
             if min_time <= time[i] <= max_time:
                 return_values.append(values[i])
-                if first_time:
-                    first_time = False
-                    print("start at ", time[i])
-            else:
-                if not first_time and first_finish:
-                    first_finish = False
-                    print("Dont take ", time[i])
-                #print("Dont process ", time[i], values[i])
         return np.array(return_values)
 
     def compile_sections(self, h5file, device_name):
@@ -498,8 +483,6 @@ class NI_DAQmxOutputWorker(Worker):
         # Start first task
         self.program_buffered_AO(self.sections[0]['AO_values'])
         self.program_buffered_DO(self.sections[0]['DO_values'])
-
-        #print("Sections", self.sections)
 
         final_values = {}
         final_values.update(DO_final_values)
@@ -641,11 +624,7 @@ class NI_DAQmxAcquisitionWorker(Worker):
                 # Append to the list of acquired data:
                 self.acquired_data.append(data)
             else:
-                # TODO: Send it to the broker thingy.
-                # print("data", self.read_array[:,-1], self.read_array.shape)
-                # print("manual_mode_chans", self.manual_mode_chans)
-                #print("manual_mode_chans", np.split(self.read_array, len(self.manual_mode_chans), axis=1))
-                # channels_and_data = zip(map(lambda x: x.split("/")[1], self.manual_mode_chans), np.split(self.read_array, len(self.manual_mode_chans)))
+                # Send it to the broker
                 for i, channel in enumerate(self.manual_mode_chans):
                     self.socket.send_multipart(["{} {}\0".format(self.device_name,channel).encode('utf-8'), np.mean(self.read_array, 0)[i]]) # Only send mean for each channel
         return 0
@@ -955,23 +934,19 @@ class NI_DAQmxWaitMonitorWorker(Worker):
             return read_array
 
     def wait_monitor(self):
-        print("Hello from wait monitor")
         try:
             # Read edge times from the counter input task, indiciating the times of the
             # pulses that occur at the start of the experiment and after every wait. If a
             # timeout occurs, pulse the timeout output to force a resume of the master
             # pseudoclock. Save the resulting
             self.logger.debug('Wait monitor thread starting')
-            print('Wait monitor thread starting')
             with self.kill_lock:
                 self.logger.debug('Waiting for start of experiment')
-                print('Waiting for start of experiment')
                 # Wait for the pulse indicating the start of the experiment:
                 if self.incomplete_sample_detection:
                     semiperiods = self.read_edges(1, timeout=None)
                 else:
                     semiperiods = self.read_edges(2, timeout=None)
-                print('Experiment started, got edges')
                 start_time = time.time()
                 self.logger.debug('Experiment started, got edges:' + str(semiperiods))
                 # May have been one or two edges, depending on whether the device has
@@ -984,7 +959,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                 self.semiperiods.append(semiperiods[-1])
                 # Alright, we're now a short way into the experiment.
                 for wait in self.wait_table:
-                    print("Process wait")
                     # How long until when the next wait should timeout?
                     timeout = wait['time'] + wait['timeout'] - current_time
                     timeout = max(timeout, 0)  # ensure non-negative
@@ -1016,7 +990,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                     # Inform any interested parties that a wait has completed:
                     postdata = _ensure_str(wait['label'])
                     self.wait_completed.post(self.h5_file, data=postdata)
-                    print("Finished wait", start_time - time.time())
                 # Inform any interested parties that waits have all finished:
                 self.logger.debug('All waits finished')
                 self.all_waits_finished.post(self.h5_file)
@@ -1076,7 +1049,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         CI_chan = self.MAX_name + '/' + self.wait_acq_connection
         # What is the longest time in between waits, plus the timeout of the
         # second wait?
-        print("Start task", self.wait_table)
         interwait_times = np.diff([0] + list(self.wait_table['time']))
         max_measure_time = max(interwait_times + self.wait_table['timeout'])
         # Allow for software delays in timeouts.
@@ -1164,7 +1136,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         # Not a daemon thread, as it implements wait timeouts - we need it to stay alive
         # if other things die.
         self.wait_monitor_thread.start()
-        print("Start wait monitor thread")
 
         program_t = time.perf_counter() - start_t
         self.programming_times.append(program_t)
@@ -1228,8 +1199,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
         self.logger.debug('transition_to_manual')
         self.stop_tasks(abort)
 
-        print(self.section_processed_waits)
-
         if not abort and self.section_processed_waits is not None:
 
             processed_waits = 0
@@ -1258,7 +1227,6 @@ class NI_DAQmxWaitMonitorWorker(Worker):
                     data[j]['timed_out'] = w['timed_out']
                     j += 1
 
-            print("Save...")
             with h5py.File(self.h5_file, 'a') as hdf5_file:
                 hdf5_file.create_dataset('/data/waits', data=data)
                 hdf5_file.create_dataset(f'/data/programming_time_wait_{self.device_name}', data=self.programming_times)

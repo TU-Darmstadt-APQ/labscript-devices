@@ -202,7 +202,7 @@ class NI_DAQmxTab(DeviceTab):
         self.create_analog_inputs(ai_prop)
 
         # Create widgets for outputs defined so far (i.e. analog outputs only)
-        DDS_widgets, AO_widgets, DO_widgets = self.auto_create_widgets(create_analog_in=False)
+        DDS_widgets, AO_widgets, DO_widgets, AI_widgets = self.auto_create_widgets(create_analog_in=True)
 
         # now create the digital output objects one port at a time
         for _, DO_prop in DO_proplist:
@@ -220,7 +220,7 @@ class NI_DAQmxTab(DeviceTab):
             return '%02d' % flag
 
         # Auto place the widgets in the UI, specifying sort keys for ordering them:
-        widget_list = [("Analog outputs", AO_widgets, split_conn_AO)]
+        widget_list = [("Analog Inputs", AI_widgets, ai_sort), ("Analog outputs", AO_widgets, split_conn_AO)]
         for port_num in range(len(ports)):
             port_str = 'port%d' % port_num
             DO_widgets = DO_widgets_by_port[port_str]

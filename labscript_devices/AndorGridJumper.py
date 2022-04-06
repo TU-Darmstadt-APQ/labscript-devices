@@ -159,7 +159,6 @@ class AndorGridJumperWorker(Worker):
 
     def get_grid(self, reuse_grid=False, times=1):
         if reuse_grid:
-            print("REUSE!")
             return self.last_grid
 
         try:
@@ -192,17 +191,14 @@ class AndorGridJumperWorker(Worker):
         }
 
         if self.sections[self.current_section]['is_jump']:
-            print("Jump decision")
 
             grid = self.get_grid(self.sections[self.current_section]['reuse_grid'], self.sections[self.current_section]['get_grid_times'])
-            print(grid)
             res_grid = self.sections[self.current_section]['grid']
 
             if self.sections[self.current_section]['negative_grid']:
                 grid_full = np.any(grid)  # TODO
             else:
                 grid_full = np.all(grid & res_grid == res_grid)
-            print(f"Grid full: {grid_full}")
 
             should_jump = grid_full
             if self.sections[self.current_section]['inverted']:
@@ -214,16 +210,12 @@ class AndorGridJumperWorker(Worker):
                 next_section = self.sections[self.current_section]['to_section']
                 self.sections[self.current_section]['jump_counter'] += 1
 
-        print("next section: ", next_section)
-        print("jump_counter: ", self.sections[self.current_section]['jump_counter'])
-
         self.section_history.append(next_section)
         self.jump_history.append(jump_decision)
 
         t_next_section = time.perf_counter() - start_t
         self.next_section_time.append(t_next_section)
         if next_section >= len(self.sections):
-            print("exit!")
             return -1
         else:
             self.current_section = next_section
@@ -325,8 +317,6 @@ class AndorGridJumperWorker(Worker):
                     break
 
             self.sections[i]['to_section'] = to_section
-
-        print(self.sections)
 
         self.runner.send_buffered()
 
