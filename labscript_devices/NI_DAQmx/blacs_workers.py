@@ -220,7 +220,9 @@ class NI_DAQmxOutputWorker(Worker):
                 times_table = group['TIMES'][:]
             except KeyError:
                 times_table = None
+            self.do_channels = hdf5_file['devices'][device_name].attrs['digital_lines']
         return AO_table, DO_table, times_table
+            
 
     def set_mirror_clock_terminal_connected(self, connected):
         """Mirror the clock terminal on another terminal to allow daisy chaining of the
@@ -243,9 +245,6 @@ class NI_DAQmxOutputWorker(Worker):
             self.DO_active = False
             return {}
         self.DO_active = True
-        # self.DO_task = Task()
-        # written = int32()
-        # ports = DO_table.dtype.names
 
         # Expand each bitfield int into self.num['num_DO']
         # individual ones and zeros:
@@ -302,7 +301,7 @@ class NI_DAQmxOutputWorker(Worker):
             self.DO_task.StartTask()
 
         final_values = {}
-
+        
         k = 0
         for port_name in self.ports:
             port = self.ports[port_name]

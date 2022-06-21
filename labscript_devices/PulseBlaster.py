@@ -113,8 +113,10 @@ class PulseBlaster(PseudoclockDevice):
                        'WAIT':       8}
                        
     description = 'PB-DDSII-300'
-    clock_limit = 8.3e6 # Slight underestimate I think.
-    clock_resolution = 26.6666666666666666e-9
+    #clock_limit = 8.3e6 # Slight underestimate I think.
+    #clock_resolution = 26.6666666666666666e-9
+    clock_limit = 2e7#8.3e6 # can probably go faster
+    clock_resolution = 1e-8#20e-9
     # TODO: Add n_dds and generalise code
     n_flags = 12
     
