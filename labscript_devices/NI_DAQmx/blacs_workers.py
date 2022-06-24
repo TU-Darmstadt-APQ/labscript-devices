@@ -25,9 +25,12 @@ import h5py
 from zprocess import Event
 from zprocess.utils import _reraise
 
+import zmq
+
 import labscript_utils.properties as properties
 from labscript_utils import dedent
 from labscript_utils.connections import _ensure_str
+from labscript_utils.labconfig import LabConfig
 
 from blacs.tab_base_classes import Worker
 
@@ -395,6 +398,12 @@ class NI_DAQmxAcquisitionWorker(Worker):
         self.buffered_rate = None
         self.buffered_chans = None
 
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.PUB)
+        exp_config = LabConfig()
+        broker_sub_port = int(exp_config.get('ports', 'BLACS_Broker_Sub'))
+        self.socket.connect("tcp://127.0.0.1:%d" % broker_sub_port)
+
         # Hard coded for now. Perhaps we will add functionality to enable
         # and disable inputs in manual mode, and adjust the rate:
         self.manual_mode_chans = self.AI_chans
@@ -410,6 +419,8 @@ class NI_DAQmxAcquisitionWorker(Worker):
     def shutdown(self):
         if self.task is not None:
             self.stop_task()
+        self.socket.close()
+        self.context.term()
 
     def read(self, task_handle, event_type, num_samples, callback_data=None):
         """Called as a callback by DAQmx while task is running. Also called by us to get
@@ -436,7 +447,12 @@ class NI_DAQmxAcquisitionWorker(Worker):
                 self.acquired_data.append(data)
             else:
                 # TODO: Send it to the broker thingy.
-                pass
+                # print("data", self.read_array[:,-1], self.read_array.shape)
+                # print("manual_mode_chans", self.manual_mode_chans)
+                #print("manual_mode_chans", np.split(self.read_array, len(self.manual_mode_chans), axis=1))
+                # channels_and_data = zip(map(lambda x: x.split("/")[1], self.manual_mode_chans), np.split(self.read_array, len(self.manual_mode_chans)))
+                for i, channel in enumerate(self.manual_mode_chans):
+                    self.socket.send_multipart(["{} {}\0".format(self.device_name,channel).encode('utf-8'), np.mean(self.read_array, 0)[i]]) # Only send mean for each channel
         return 0
 
     def start_task(self, chans, rate):

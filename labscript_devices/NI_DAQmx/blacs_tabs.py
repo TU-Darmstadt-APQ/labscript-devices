@@ -19,6 +19,30 @@ from .utils import split_conn_AO, split_conn_DO
 from . import models
 import warnings
 
+from configparser import SafeConfigParser
+from qtutils.qt.QtCore import *
+from qtutils.qt.QtGui import *
+from qtutils.qt.QtWidgets import *
+from labscript_utils.qtwidgets.toolpalette import ToolPaletteGroup
+from labscript_utils.labconfig import LabConfig
+
+
+class MyCombiButton(QPushButton):
+    def __init__(self, text, device_tab_ref, device_states):
+        super(QPushButton, self).__init__(text)
+        self.device_tab_ref = device_tab_ref
+        self.device_states = device_states
+        self.toggled.connect(self.handle_toggle)
+
+    def handle_toggle(self, checked):
+        for output in self.device_states:
+            # output[0] # is the output name
+            # output[1] # is the on-state value for this output in the current combination
+            if checked:  # checked
+                self.device_tab_ref._DO[output[0]].set_value(1 if output[1] else 0, program=True)  # update output-button state & program the device
+            else:  # unchecked
+                self.device_tab_ref._DO[output[0]].set_value(0 if output[1] else 1, program=True)  # update output-button state & program the device
+
 
 class NI_DAQmxTab(DeviceTab):
     def initialise_GUI(self):
@@ -86,10 +110,14 @@ class NI_DAQmxTab(DeviceTab):
                 'decimals': AO_base_decimals,
             }
 
+        ai_prop = {}
+        for i in range(num_AI):
+            ai_prop['ai%d' % i] = {}
+
         DO_proplist = []
         DO_hardware_names = []
         for port_num in range(len(ports)):
-            port_str ='port%d' % port_num
+            port_str = 'port%d' % port_num
             port_props = {}
             for line in range(ports[port_str]['num_lines']):
                 hardware_name = 'port%d/line%d' % (port_num, line)
@@ -99,9 +127,10 @@ class NI_DAQmxTab(DeviceTab):
 
         # Create the output objects
         self.create_analog_outputs(AO_prop)
+        self.create_analog_inputs(ai_prop)
 
         # Create widgets for outputs defined so far (i.e. analog outputs only)
-        _, AO_widgets, _ = self.auto_create_widgets()
+        DDS_widgets, AO_widgets, DO_widgets, AI_widgets = self.auto_create_widgets(create_analog_in=True)
 
         # now create the digital output objects one port at a time
         for _, DO_prop in DO_proplist:
@@ -112,10 +141,15 @@ class NI_DAQmxTab(DeviceTab):
         for port_str, DO_prop in DO_proplist:
             DO_widgets_by_port[port_str] = self.create_digital_widgets(DO_prop)
 
+        def ai_sort(channel):
+            flag = channel.replace('ai', '')
+            flag = int(flag)
+            return '%02d' % flag
+
         # Auto place the widgets in the UI, specifying sort keys for ordering them:
-        widget_list = [("Analog outputs", AO_widgets, split_conn_AO)]
+        widget_list = [("Analog Inputs", AI_widgets, ai_sort), ("Analog outputs", AO_widgets, split_conn_AO)]
         for port_num in range(len(ports)):
-            port_str ='port%d' % port_num
+            port_str = 'port%d' % port_num
             DO_widgets = DO_widgets_by_port[port_str]
             name = "Digital outputs: %s" % port_str
             if ports[port_str]['supports_buffered']:
