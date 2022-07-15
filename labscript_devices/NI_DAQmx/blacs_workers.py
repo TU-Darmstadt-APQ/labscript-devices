@@ -58,9 +58,19 @@ class NI_DAQmxOutputWorker(Worker):
         self.runner = RunBaseClass(self.name, self.jump_address)
         self.runner.start()
 
+        self.DO_active = False
+        self.AO_active = False
+
+        self.current_section = 0
+
+        self.sections = []
+
+        self.AO_all_zero = True
+        self.DO_all_zero = True
+
         def is_finished_callback():
             WAIT_TIME = 0.5
-            if self.AO_task is not None:
+            if self.AO_task is not None and self.AO_active:
                 try:
                     self.AO_task.WaitUntilTaskDone(WAIT_TIME)
                 except:
@@ -68,7 +78,7 @@ class NI_DAQmxOutputWorker(Worker):
                 self.AO_task.StopTask()
 
                 
-            if self.DO_task is not None:
+            if self.DO_task is not None and self.DO_active:
                 try:
                     self.DO_task.WaitUntilTaskDone(WAIT_TIME)
                 except:
@@ -80,32 +90,22 @@ class NI_DAQmxOutputWorker(Worker):
         def load_section(next_section):
             start_t = time.perf_counter()
             if self.current_section != next_section:
-                if not self.static_AO and not self.AO_all_zero:
+                if not self.static_AO and not self.AO_all_zero and self.AO_active:
                     self.AO_task.ClearTask()
-                if not self.static_DO and not self.DO_all_zero:
+                if not self.static_DO and not self.DO_all_zero and self.DO_active:
                     self.DO_task.ClearTask()
                 self.program_buffered_AO(self.sections[next_section]['AO_values'])
                 self.program_buffered_DO(self.sections[next_section]['DO_values'])
             else:
-                if self.AO_task is not None:
+                if self.AO_task is not None and self.AO_active:
                     self.AO_task.StartTask()
-                if self.DO_task is not None:
+                if self.DO_task is not None and self.DO_active:
                     self.DO_task.StartTask()
             req_t = time.perf_counter() - start_t
             self.programming_times.append(req_t)
 
         self.runner.set_is_finished_callback(is_finished_callback)
         self.runner.set_load_next_section_callback(load_section)
-
-        self.current_section = 0
-
-        self.sections = []
-
-        self.AO_all_zero = True
-        self.DO_all_zero = True
-
-        self.DO_active = False
-        self.AO_active = False
 
         self.programming_times = []
         self.h5_file = None
@@ -169,8 +169,10 @@ class NI_DAQmxOutputWorker(Worker):
 
         # Start tasks:
         if self.AO_task is not None:
+            self.AO_active = True
             self.AO_task.StartTask()
         if self.DO_task is not None:
+            self.DO_active = True
             self.DO_task.StartTask()
 
     def program_manual(self, front_panel_values):
@@ -241,7 +243,8 @@ class NI_DAQmxOutputWorker(Worker):
     def program_buffered_DO(self, DO_table):
         """Create the DO task and program in the DO table for a shot. Return a
         dictionary of the final values of each channel in use"""
-        if DO_table is None:
+        print(f"Write DO {DO_table}")
+        if DO_table is None or len(DO_table) == 0:
             self.DO_active = False
             return {}
         self.DO_active = True
@@ -313,7 +316,8 @@ class NI_DAQmxOutputWorker(Worker):
         return final_values
 
     def program_buffered_AO(self, AO_table):
-        if AO_table is None:
+        print(f"Write DO {AO_table}")
+        if AO_table is None or len(AO_table) == 0:
             self.AO_active = False
             return {}
 
