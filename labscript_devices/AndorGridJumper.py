@@ -154,20 +154,13 @@ class AndorGridJumperWorker(Worker):
         if not self.host:
             return False
 
-        self.get_grid()
+        self.get_grid(0)
         return True
 
-    def get_grid(self, reuse_grid=False, times=1):
-        if reuse_grid:
-            return self.last_grid
+    def get_grid(self, t):
 
         try:
-            for i in range(times):  # HACK TO REMOVE TOO MANY GRIDS...
-                grid = zprocess.zmq_get(self.port, self.host, 'get_grid', 1.5)
-            #grid[:, 0:4] = False
-
-            self.last_grid = grid
-
+            grid = zprocess.zmq_get(self.port, self.host, f'get_grid {t}', 1.5)
             return grid
         except:
             # need to add: Make a Fake Exposure
@@ -180,6 +173,8 @@ class AndorGridJumperWorker(Worker):
         # Evaluate which section is next
         start_t = time.perf_counter()
         next_section = self.current_section + 1
+
+        print("Jump decision...")
 
         jump_decision = {
             'executed_jump': False,
@@ -196,7 +191,7 @@ class AndorGridJumperWorker(Worker):
             if self.sections[self.current_section]['dummy']:
                 should_jump = True
             else:
-                grid = self.get_grid(self.sections[self.current_section]['reuse_grid'], self.sections[self.current_section]['get_grid_times'])
+                grid = self.get_grid(self.sections[self.current_section]['end'])
                 res_grid = self.sections[self.current_section]['grid']
 
                 if self.sections[self.current_section]['negative_grid']:
@@ -273,12 +268,6 @@ class AndorGridJumperWorker(Worker):
                 dummy = False
                 if 'dummy' in jump_data:
                     dummy = jump_data['dummy']
-                reuse_grid = False
-                if 'reuse_grid' in jump_data:
-                    reuse_grid = jump_data['reuse_grid']
-                get_grid_times = 1
-                if 'get_grid_times' in jump_data:
-                    get_grid_times = jump_data['get_grid_times']
                 negative_grid = False
                 if 'negative_grid' in jump_data:
                     negative_grid = jump_data['negative_grid']
@@ -290,9 +279,7 @@ class AndorGridJumperWorker(Worker):
                     "is_jump": True,
                     "jump_label": jump['label'],
                     "inverted": inverted,
-                    "reuse_grid": reuse_grid,
                     "max_jumps": jump['max_jumps'],
-                    "get_grid_times": get_grid_times,
                     "jump_counter": 0,
                     "negative_grid": negative_grid,
                     "grid": np.array(grid),
@@ -306,9 +293,7 @@ class AndorGridJumperWorker(Worker):
                     "is_jump": False,
                     "jump_label": 'None',
                     "inverted": False,
-                    "reuse_grid": False,
                     "negative_grid": False,
-                    "get_grid_times": 0,
                     "max_jumps": 0,
                     "jump_counter": 0,
                     "to_time": 0,

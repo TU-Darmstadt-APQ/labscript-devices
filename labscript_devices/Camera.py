@@ -79,14 +79,14 @@ class Camera(TriggerableDevice):
         start = t
         end = t + duration
         for exposure in self.exposures:
-            _, other_t, _, other_duration = exposure
+            _, other_t, _, other_duration, _ = exposure
             other_start = other_t
             other_end = other_t + other_duration
             if abs(other_start - end) < self.minimum_recovery_time or abs(other_end - start) < self.minimum_recovery_time:
                 raise LabscriptError('%s %s has two exposures closer together than the minimum recovery time: ' % (self.description, self.name) +
                                      'one at t = %fs for %fs, and another at t = %fs for %fs. ' % (t, duration, start, duration) +
                                      'The minimum recovery time is %fs.' % self.minimum_recovery_time)
-        self.exposures.append((name, t, frametype, duration))
+        self.exposures.append((name, t, frametype, duration, len(self.exposures)))
         return duration
 
     def do_checks(self):
@@ -95,7 +95,7 @@ class Camera(TriggerableDevice):
             if camera is not self:
                 for exposure in self.exposures:
                     if exposure not in camera.exposures:
-                        _, start, _, duration = exposure
+                        _, start, _, duration, _ = exposure
                         raise LabscriptError('Cameras %s and %s share a trigger. ' % (self.name, camera.name) +
                                              '%s has an exposure at %fs for %fs, ' % (self.name, start, duration) +
                                              'but there is no matching exposure for %s. ' % camera.name +
@@ -103,7 +103,7 @@ class Camera(TriggerableDevice):
 
     def generate_code(self, hdf5_file):
         self.do_checks()
-        table_dtypes = [('name', 'a256'), ('time', float), ('frametype', 'a256'), ('exposure_time', float)]
+        table_dtypes = [('name', 'a256'), ('time', float), ('frametype', 'a256'), ('exposure_time', float), ('id', int)]
         data = np.array(self.exposures, dtype=table_dtypes)
 
         group = self.init_device_group(hdf5_file)
