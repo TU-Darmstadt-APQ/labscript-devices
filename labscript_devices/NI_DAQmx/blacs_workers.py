@@ -390,11 +390,18 @@ class NI_DAQmxOutputWorker(Worker):
         if values is None:
             return None
 
-        return_values = []
-        for i in range(len(values)):
-            if min_time <= time[i] <= max_time:
-                return_values.append(values[i])
-        return np.array(return_values)
+        time = np.array(time)
+        values = np.array(values)
+
+        selection = np.logical_and(min_time <= time, time <= max_time)
+        selected_values = values[selection]
+
+        return selected_values
+        # return_values = []
+        # for i in range(len(values)):
+        #     if min_time <= time[i] <= max_time:
+        #         return_values.append(values[i])
+        # return np.array(return_values)
 
     def compile_sections(self, h5file, device_name):
         # Get the data to be programmed into the output tasks:
