@@ -29,16 +29,17 @@ class AndorCamera(Camera):
     minimum_recovery_time = None
 
     @set_passed_properties(
-        property_names={"device_properties": ["gain", "preAmpGain", "save", "vsamplitude", "vsspeed", "hsspeed", "triggerMode",
+        property_names={"device_properties": ["gain", "preAmpGain", "EMgainMode", "save", "vsamplitude", "vsspeed", "hsspeed", "triggerMode",
                                               "shutterMode", "acquisitionMode", "accCycleTime", "accNum", "kinCycleTime",
                                               "kinNum", "frameTransfer"]}
     )
-    def __init__(self, name, parent_device, connection, gain=0, preAmpGain=1.0, save=1, vsspeed=3.4, hsspeed=3.0,
+    def __init__(self, name, parent_device, connection, gain=0, preAmpGain=1.0, EMgainMode=2, save=1, vsspeed=3.4, hsspeed=3.0,
                  vsamplitude=0, triggerMode=1, shutterMode=1, acquisitionMode=5, accCycleTime=1.0,
                  accNum=1, kinCycleTime=0, kinNum=2000, frameTransfer=0, **kwargs):
         Camera.__init__(self, name, parent_device, connection, **kwargs)
         self.save = save
         self.gain = gain
+        self.EMgainMode = EMgainMode
         self.preAmpGain = preAmpGain
         self.vsspeed = vsspeed
         self.hsspeed = hsspeed
