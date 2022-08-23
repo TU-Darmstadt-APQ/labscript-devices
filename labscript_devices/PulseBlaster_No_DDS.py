@@ -29,8 +29,8 @@ class PulseBlaster_No_DDS(PulseBlaster):
     clock_limit = 8.3e6  # can probably go faster
     clock_resolution = 20e-9
     n_flags = 24
-    core_clock_freq = 100 # MHz
-    
+    core_clock_freq = 100  # MHz
+
     def write_pb_inst_to_h5(self, pb_inst, hdf5_file, section=None):
         # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
         pb_dtype = [('flags', np.int32), ('inst', np.int32), ('inst_data', np.int32), ('length', np.float64)]
@@ -41,16 +41,16 @@ class PulseBlaster_No_DDS(PulseBlaster):
             dataint = inst['data']
             delaydouble = inst['delay']
             pb_inst_table[i] = (flagint, instructionint, dataint, delaydouble)
-        
-        # Okay now write it to the file: 
-        group = hdf5_file['/devices/'+self.name]  
+
+        # Okay now write it to the file:
+        group = hdf5_file['/devices/' + self.name]
         if section == None:
-            group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)
+            group.create_dataset('PULSE_PROGRAM', compression=config.compression, data=pb_inst_table)
         else:
-            group.create_dataset(f'PULSE_PROGRAM_{section}', compression=config.compression,data = pb_inst_table)
+            group.create_dataset(f'PULSE_PROGRAM_{section}', compression=config.compression, data=pb_inst_table)
 
         self.set_property('stop_time', self.stop_time, location='device_properties', overwrite=True)
-        
+
     def generate_code(self, hdf5_file):
         # Generate the hardware instructions for each section
         self.init_device_group(hdf5_file)
@@ -62,14 +62,13 @@ class PulseBlaster_No_DDS(PulseBlaster):
         total_cut_times.append(self.stop_time)
         total_cut_times = sorted(set(total_cut_times))
 
-        for i in range(len(total_cut_times)-1):
+        for i in range(len(total_cut_times) - 1):
             start = total_cut_times[i]
-            end = total_cut_times[i+1]
+            end = total_cut_times[i + 1]
 
             pb_inst = self.convert_to_pb_inst(dig_outputs, [], {}, {}, {}, start, end)
             self._check_wait_monitor_ok()
-            self.write_pb_inst_to_h5(pb_inst, hdf5_file, i) 
-        
+            self.write_pb_inst_to_h5(pb_inst, hdf5_file, i)
 
 
 from blacs.tab_base_classes import Worker, define_state
@@ -125,10 +124,10 @@ class Pulseblaster_No_DDS_Tab(DeviceTab):
         self.programming_scheme = connection_object.properties.get('programming_scheme', 'pb_start/BRANCH')
 
         # Create and set the primary worker
-        self.create_worker("main_worker",self.device_worker_class,{'board_number':self.board_number,
-                                                                   'num_DO': self.num_DO,
-                                                                   'jump_address': str(self.settings['connection_table'].jump_device_address),
-                                                                   'programming_scheme': self.programming_scheme})
+        self.create_worker("main_worker", self.device_worker_class, {'board_number': self.board_number,
+                                                                     'num_DO': self.num_DO,
+                                                                     'jump_address': str(self.settings['connection_table'].jump_device_address),
+                                                                     'programming_scheme': self.programming_scheme})
         self.primary_worker = "main_worker"
 
         # Set the capabilities of this device
@@ -225,11 +224,10 @@ class Pulseblaster_No_DDS_Tab(DeviceTab):
 
             pixmap = icon.pixmap(QtCore.QSize(16, 16))
             self.status_widgets[state].setPixmap(pixmap)
-        
-    
-    @define_state(MODE_MANUAL|MODE_BUFFERED|MODE_TRANSITION_TO_BUFFERED|MODE_TRANSITION_TO_MANUAL,True)
-    def start(self,widget=None):
-        #yield(self.queue_work(self._primary_worker,'start_run'))
+
+    @define_state(MODE_MANUAL | MODE_BUFFERED | MODE_TRANSITION_TO_BUFFERED | MODE_TRANSITION_TO_MANUAL, True)
+    def start(self, widget=None):
+        # yield(self.queue_work(self._primary_worker,'start_run'))
         self.status_monitor()
 
     @define_state(MODE_MANUAL | MODE_BUFFERED | MODE_TRANSITION_TO_BUFFERED | MODE_TRANSITION_TO_MANUAL, True)
@@ -248,7 +246,7 @@ class Pulseblaster_No_DDS_Tab(DeviceTab):
         the run is over"""
         self.statemachine_timeout_remove(self.status_monitor)
         self.status_monitor()
-        self.statemachine_timeout_add(100,self.status_monitor,notify_queue)
+        self.statemachine_timeout_add(100, self.status_monitor, notify_queue)
 
 
 class PulseblasterNoDDSWorker(Worker):
@@ -286,14 +284,14 @@ class PulseblasterNoDDSWorker(Worker):
         self.time_based_shot_duration = None
         self.time_based_shot_end_time = None
 
-
         self.runner = RunBaseClass(self.device_name, self.jump_address)
         self.runner.start()
 
         self.runner.set_start_callback(self.start_run)
+
         def is_finished_callback():
             status, waits, clock_timer_over = self.check_status(True)
-            if status['waiting']: #TODO: waiting or done depends on programming type...
+            if status['waiting']:  # TODO: waiting or done depends on programming type...
                 return True
             return False
 
@@ -302,9 +300,8 @@ class PulseblasterNoDDSWorker(Worker):
 
         self.sections = []
         self.programming_time = []
-        
 
-    def program_manual(self,values):
+    def program_manual(self, values):
         # Program the DDS registers:
 
         # create flags string
@@ -349,7 +346,7 @@ class PulseblasterNoDDSWorker(Worker):
         return {}
 
     def start_run(self):
-        
+
         if self.programming_scheme == 'pb_start/BRANCH':
             pb_start()
         elif self.programming_scheme == 'pb_stop_programming/STOP':
@@ -360,9 +357,8 @@ class PulseblasterNoDDSWorker(Worker):
         if self.time_based_stop_workaround:
             import time
             self.time_based_shot_end_time = time.time() + self.time_based_shot_duration
-                    
 
-    def program_clock(self, section, initial_values = None, fresh=False):
+    def program_clock(self, section, initial_values=None, fresh=False):
 
         start_t = time.perf_counter()
         if self.programming_scheme == 'pb_stop_programming/STOP':
@@ -370,7 +366,7 @@ class PulseblasterNoDDSWorker(Worker):
             pb_stop()
 
         pulse_program = self.sections[section]["pulse_program"]
-        flags,z,z,z = pulse_program[-1]
+        flags, z, z, z = pulse_program[-1]
 
         if initial_values == None:
             initial_values = self.latest_values
@@ -378,16 +374,16 @@ class PulseblasterNoDDSWorker(Worker):
         if fresh or (self.smart_cache['initial_values'] != initial_values) or \
             (len(self.smart_cache['pulse_program']) != len(pulse_program)) or \
             (self.smart_cache['pulse_program'] != pulse_program).any() or \
-            not self.smart_cache['ready_to_go']:
+                not self.smart_cache['ready_to_go']:
             # Enter programming mode
             pb_start_programming(PULSE_PROGRAM)
-        
+
             self.smart_cache['ready_to_go'] = True
             self.smart_cache['initial_values'] = initial_values
 
             # create initial flags string
             # NOTE: The spinapi can take a string or integer for flags.
-            # If it is a string: 
+            # If it is a string:
             #     flag: 0          12
             #          '101100011111'
             #
@@ -398,27 +394,27 @@ class PulseblasterNoDDSWorker(Worker):
             # Be warned!
             initial_flags = ''
             for i in range(self.num_DO):
-                if initial_values['flag %d'%i]:
+                if initial_values['flag %d' % i]:
                     initial_flags += '1'
                 else:
                     initial_flags += '0'
 
             if self.programming_scheme == 'pb_start/BRANCH':
-                # Line zero is a wait on the final state of the program in 'pb_start/BRANCH' mode 
-                pb_inst_pbonly(flags,WAIT,0,100)
+                # Line zero is a wait on the final state of the program in 'pb_start/BRANCH' mode
+                pb_inst_pbonly(flags, WAIT, 0, 100)
             else:
-                # Line zero otherwise just contains the initial flags 
-                pb_inst_pbonly(initial_flags,CONTINUE,0,100)
-                                    
+                # Line zero otherwise just contains the initial flags
+                pb_inst_pbonly(initial_flags, CONTINUE, 0, 100)
+
             # Line one is a continue with the current front panel values:
             pb_inst_pbonly(initial_flags, CONTINUE, 0, 100)
             # Now the rest of the program:
             if fresh or len(self.smart_cache['pulse_program']) != len(pulse_program) or \
-            (self.smart_cache['pulse_program'] != pulse_program).any():
+                    (self.smart_cache['pulse_program'] != pulse_program).any():
                 self.smart_cache['pulse_program'] = pulse_program
                 for args in pulse_program:
                     pb_inst_pbonly(*args)
-                    
+
             if self.programming_scheme == 'pb_start/BRANCH':
                 # We will be triggered by pb_start() if we are are the master pseudoclock or a single hardware trigger
                 # from the master if we are not:
@@ -429,31 +425,31 @@ class PulseblasterNoDDSWorker(Worker):
                 # Our start_method will call pb_stop_programming() when we are ready
                 pass
             else:
-                raise ValueError('invalid programming_scheme %s'%str(self.programming_scheme))
-                
+                raise ValueError('invalid programming_scheme %s' % str(self.programming_scheme))
+
         elif self.programming_scheme == 'pb_stop_programming/STOP':
             # Ensure start_programming called if the programming_scheme is 'pb_stop_programming/STOP'
-            # so we are ready to be triggered by a call to pb_stop_programming() 
+            # so we are ready to be triggered by a call to pb_stop_programming()
             # even if no programming occurred due to smart programming:
             pb_start_programming(PULSE_PROGRAM)
 
         return_values = {}
         # Since we are converting from an integer to a binary string, we need to reverse the string! (see notes above when we create flags variables)
-        return_flags = str(bin(flags)[2:]).rjust(self.num_DO,'0')[::-1]
+        return_flags = str(bin(flags)[2:]).rjust(self.num_DO, '0')[::-1]
         for i in range(self.num_DO):
-            return_values['flag %d'%i] = return_flags[i]
+            return_values['flag %d' % i] = return_flags[i]
         self.latest_values = return_values
 
-        self.programming_time.append(time.perf_counter()-start_t)
+        self.programming_time.append(time.perf_counter() - start_t)
 
-    def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         self.h5file = h5file
         self.programming_time = []
-        
+
         self.time_based_stop_workaround = False
         self.sections = []
-        with h5py.File(h5file,'r') as hdf5_file:
-            group = hdf5_file['devices/%s'%device_name]
+        with h5py.File(h5file, 'r') as hdf5_file:
+            group = hdf5_file['devices/%s' % device_name]
 
             for s_group in group.keys():
                 if 'PULSE_PROGRAM_' not in s_group:
@@ -464,16 +460,16 @@ class PulseblasterNoDDSWorker(Worker):
                 time_based_stop_workaround = group.attrs.get('time_based_stop_workaround', False)
                 if time_based_stop_workaround:
                     time_based_shot_duration = (group.attrs['stop_time']
-                                                    + hdf5_file['waits'][:]['timeout'].sum()
-                                                    + group.attrs['time_based_stop_workaround_extra_time'])
+                                                + hdf5_file['waits'][:]['timeout'].sum()
+                                                + group.attrs['time_based_stop_workaround_extra_time'])
                     raise Exception("Using unsupported feature for jumps!")
 
                 # Now for the pulse program:
                 pulse_program = section_group[2:]
 
-                #Let's get the final state of the pulseblaster. z's are the args we don't need:
-                flags,z,z,z = pulse_program[-1]
-                
+                # Let's get the final state of the pulseblaster. z's are the args we don't need:
+                flags, z, z, z = pulse_program[-1]
+
                 # Are there waits in use in this experiment? The monitor waiting for the end
                 # of the experiment will need to know:
                 wait_monitor_exists = bool(hdf5_file['waits'].attrs['wait_monitor_acquisition_device'])
@@ -484,26 +480,26 @@ class PulseblasterNoDDSWorker(Worker):
                     # having waits but not a wait monitor means we can't tell when the shot
                     # is over unless the shot ends in a STOP instruction:
                     assert self.programming_scheme == 'pb_stop_programming/STOP'
-                
+
                 # Now we build a dictionary of the final state to send back to the GUI:
                 return_values = {}
                 # Since we are converting from an integer to a binary string, we need to reverse the string! (see notes above when we create flags variables)
-                return_flags = str(bin(flags)[2:]).rjust(self.num_DO,'0')[::-1]
+                return_flags = str(bin(flags)[2:]).rjust(self.num_DO, '0')[::-1]
                 for i in range(self.num_DO):
-                    return_values['flag %d'%i] = return_flags[i]
+                    return_values['flag %d' % i] = return_flags[i]
 
                 section = {
                     "pulse_program": pulse_program
                 }
                 self.sections.append(section)
-                
 
             self.program_clock(0, initial_values, fresh)
 
             self.runner.send_buffered()
+            self.runner.send_master_finished()
 
             return return_values
-            
+
     def check_status(self, force=False):
         # TODO write self.waits_pending depending on the current
         if not force and (self.runner.state not in ['MANUAL', 'INIT']):
@@ -513,7 +509,7 @@ class PulseblasterNoDDSWorker(Worker):
                 "running": True,
                 "waiting": False,
                 "scanning": False
-            }, 0, False # TODO: check
+            }, 0, False  # TODO: check
 
         # if self.waits_pending:
         #     try:
@@ -527,7 +523,7 @@ class PulseblasterNoDDSWorker(Worker):
         else:
             time_based_shot_over = None
         return pb_read_status(), 0, time_based_shot_over
-        
+
     def transition_to_manual(self):
 
         status, waits_pending, time_based_shot_over = self.check_status()
@@ -548,7 +544,7 @@ class PulseblasterNoDDSWorker(Worker):
 
         with h5py.File(self.h5file, 'a') as hdf5_file:
             hdf5_file.create_dataset(f'/data/programming_time_{self.device_name}', data=self.programming_time)
-        
+
         if done_condition and not waits_pending:
             return True
         else:
@@ -572,7 +568,7 @@ class PulseblasterNoDDSWorker(Worker):
         return True
 
     def shutdown(self):
-        #TODO: implement this
+        # TODO: implement this
         self.runner.shutdown()
 
 

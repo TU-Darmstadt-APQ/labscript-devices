@@ -21,6 +21,7 @@ import threading
 import numpy as np
 from labscript_utils.in_exp_com import RunBaseClass
 
+
 class PrawnBlasterWorker(Worker):
     """The primary worker for the PrawnBlaster.
 
@@ -36,16 +37,23 @@ class PrawnBlasterWorker(Worker):
         """
 
         # fmt: off
-        global h5py; import labscript_utils.h5_lock, h5py
-        global serial; import serial
-        global time; import time
-        global re; import re
-        global numpy; import numpy
-        global zprocess; import zprocess
+        global h5py
+        import labscript_utils.h5_lock
+        import h5py
+        global serial
+        import serial
+        global time
+        import time
+        global re
+        import re
+        global numpy
+        import numpy
+        global zprocess
+        import zprocess
         self.smart_cache = {}
         self.cached_pll_params = {}
         # fmt: on
-        
+
         self.runner = RunBaseClass(self.device_name, self.jump_address)
         self.runner.start()
 
@@ -79,6 +87,7 @@ class PrawnBlasterWorker(Worker):
                 assert self.prawnblaster.readline().decode() == "ok\r\n"
 
         self.runner.set_start_callback(self.start_run)
+
         def is_finished_callback():
             run_status, clock_status = self.read_status(True)
             if run_status == 0:
@@ -93,13 +102,13 @@ class PrawnBlasterWorker(Worker):
         """Checks the operational status of the PrawnBlaster.
 
         This is automatically called by BLACS to update the status
-        of the PrawnBlaster. It also reads the lengths of any 
+        of the PrawnBlaster. It also reads the lengths of any
         accumulated waits during a shot.
 
         Returns:
             (int, int, bool): Tuple containing:
 
-            - **run_status** (int): Possible values are: 
+            - **run_status** (int): Possible values are:
 
                 * 0 : manual-mode
                 * 1 : transitioning to buffered execution
@@ -125,7 +134,7 @@ class PrawnBlasterWorker(Worker):
         ):
             # Try to read out wait. For now, we're only reading out waits from
             # pseudoclock 0 since they should all be the same (requirement imposed by labscript)
-            
+
             with self.serial_lock:
                 self.prawnblaster.write(b"getwait %d %d\r\n" % (0, self.current_wait))
                 response = self.prawnblaster.readline().decode()
@@ -191,7 +200,7 @@ class PrawnBlasterWorker(Worker):
         run_status, clock_status = self.read_status()
         return run_status, clock_status, waits_pending
 
-    def read_status(self, Total = False):
+    def read_status(self, Total=False):
         """Reads the status of the PrawnBlaster.
 
         Returns:
@@ -244,7 +253,6 @@ class PrawnBlasterWorker(Worker):
 
         return values
 
-
     def program_clock(self, section):
         # Program instructions
         for pseudoclock, pulse_program in enumerate(self.sections[section]['pulse_program']):
@@ -255,7 +263,7 @@ class PrawnBlasterWorker(Worker):
 
                 # Only program instructions that differ from what's in the smart cache:
                 if self.smart_cache[pseudoclock][i] != instruction:
-                    
+
                     with self.serial_lock:
                         self.prawnblaster.write(
                             b"set %d %d %d %d\r\n"
@@ -276,7 +284,6 @@ class PrawnBlasterWorker(Worker):
             # Start the Prawnblaster and have it wait for a hardware trigger
             self.wait_for_trigger()
 
-
     def filter_data_by_time(self, time, values, min_time, max_time):
 
         if time is None:
@@ -291,7 +298,7 @@ class PrawnBlasterWorker(Worker):
         return np.array(return_values)
 
     def compile_sections(self, h5file, device_name):
-        
+
         # Get data from HDF5 file
         pulse_programs = []
         pulse_program_times = []
@@ -329,7 +336,7 @@ class PrawnBlasterWorker(Worker):
             jumps = hdf5_file['jumps'][:]
             master_clock = hdf5_file['connection table'].attrs['master_pseudoclock']
             end_time = hdf5_file['devices'][master_clock].attrs['stop_time']
-            
+
         timestamps = []
         for j in range(len(jumps)):
             timestamps.append(jumps[j]["time"])
@@ -341,13 +348,13 @@ class PrawnBlasterWorker(Worker):
         timestamps = sorted(set(timestamps))
 
         self.sections = []
-        for i in range(len(timestamps)-1):
+        for i in range(len(timestamps) - 1):
 
             print(f"Generate section {i}")
 
             start = timestamps[i]
-            end = timestamps[i+1]
-            
+            end = timestamps[i + 1]
+
             # Just overwrite every time as we are only interested in the last ones...
             # DO_final_values, DO_task, DO_all_zero = self.program_buffered_DO(self.filter_data_by_time(times_table, DO_table, start, end))
             # AO_final_values, AO_task, AO_all_zero = self.program_buffered_AO(self.filter_data_by_time(times_table, AO_table, start, end))
@@ -359,16 +366,13 @@ class PrawnBlasterWorker(Worker):
                 pt = pulse_program_times[j]
                 current_pulse_program.append(self.filter_data_by_time(pt, pp, start, end))
 
-
             section = {
                 "start": start,
                 "end": end,
                 "pulse_program": current_pulse_program
             }
 
-
             self.sections.append(section)
-
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         print("Transition to buffered")
@@ -419,6 +423,7 @@ class PrawnBlasterWorker(Worker):
         self.program_clock(0)
 
         self.runner.send_buffered()
+        self.runner.send_master_finished()
 
         # All outputs end on 0
         final = {}
@@ -534,7 +539,7 @@ class PrawnBlasterWorker(Worker):
             # Only need to send abort signal if we have told the PrawnBlaster to wait
             # for a hardware trigger. Otherwise it's just been programmed with
             # instructions and there is nothing we need to do to abort.
-            
+
             with self.serial_lock:
                 self.prawnblaster.write(b"abort\r\n")
                 assert self.prawnblaster.readline().decode() == "ok\r\n"
