@@ -44,6 +44,45 @@ from labscript_utils.in_exp_com import RunBaseClass
 from labscript_utils.labconfig import LabConfig
 
 
+if sys.platform != 'win32':
+    from time import perf_counter
+    try:
+        from time import perf_counter_ns
+    except ImportError:
+        def perf_counter():
+            """perf_counter_ns() -> int
+
+            Performance counter for benchmarking as nanoseconds.
+            """
+            return perf_counter()
+else:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+
+    kernel32.QueryPerformanceFrequency.argtypes = (
+        wintypes.PLARGE_INTEGER,) # lpFrequency
+
+    kernel32.QueryPerformanceCounter.argtypes = (
+        wintypes.PLARGE_INTEGER,) # lpPerformanceCount
+
+    _qpc_frequency = wintypes.LARGE_INTEGER()
+    if not kernel32.QueryPerformanceFrequency(ctypes.byref(_qpc_frequency)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    _qpc_frequency = _qpc_frequency.value
+
+    def perf_counter():
+        """perf_counter() -> float
+
+        Performance counter for benchmarking.
+        """
+        count = wintypes.LARGE_INTEGER()
+        if not kernel32.QueryPerformanceCounter(ctypes.byref(count)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return count.value / _qpc_frequency
+
+
 
 class NI_DAQmxOutputWorker(Worker):
     def init(self):
@@ -243,7 +282,7 @@ class NI_DAQmxOutputWorker(Worker):
     def program_buffered_DO(self, DO_table):
         """Create the DO task and program in the DO table for a shot. Return a
         dictionary of the final values of each channel in use"""
-        print(f"Write DO {DO_table}")
+        print(f"Write DO")
         if DO_table is None or len(DO_table) == 0:
             self.DO_active = False
             return {}
@@ -316,7 +355,7 @@ class NI_DAQmxOutputWorker(Worker):
         return final_values
 
     def program_buffered_AO(self, AO_table):
-        print(f"Write DO {AO_table}")
+        print(f"Write AO")
         if AO_table is None or len(AO_table) == 0:
             self.AO_active = False
             return {}
@@ -390,11 +429,10 @@ class NI_DAQmxOutputWorker(Worker):
         if values is None:
             return None
 
-        return_values = []
-        for i in range(len(values)):
-            if min_time <= time[i] <= max_time:
-                return_values.append(values[i])
-        return np.array(return_values)
+        low_i = np.searchsorted(time, (min_time), side='left')
+        high_i = np.searchsorted(time, (max_time), side='right')
+
+        return values[low_i:high_i]
 
     def compile_sections(self, h5file, device_name):
         # Get the data to be programmed into the output tasks:
@@ -469,6 +507,9 @@ class NI_DAQmxOutputWorker(Worker):
 
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+
+        print(f"1 {perf_counter()}")
+
         # Store the initial values in case we have to abort and restore them:
         self.initial_values = initial_values
         self.programming_times = []
@@ -480,12 +521,21 @@ class NI_DAQmxOutputWorker(Worker):
         # Mirror the clock terminal, if applicable:
         self.set_mirror_clock_terminal_connected(True)
 
+        print(f"2 {perf_counter()}")
         # Compile all sections:
         DO_final_values, AO_final_values = self.compile_sections(h5file, device_name)
 
+        print(f"3 {perf_counter()}")
+
         # Start first task
+
+        print(f"AO 1 {perf_counter()}")
         self.program_buffered_AO(self.sections[0]['AO_values'])
+        print(f"AO 2 {perf_counter()}")
         self.program_buffered_DO(self.sections[0]['DO_values'])
+
+
+        print(f"4 {perf_counter()}")
 
         final_values = {}
         final_values.update(DO_final_values)
@@ -498,6 +548,8 @@ class NI_DAQmxOutputWorker(Worker):
 
         self.current_section = 0
         self.runner.send_buffered()
+
+        print(f"5 {perf_counter()}")
 
         return final_values
 
