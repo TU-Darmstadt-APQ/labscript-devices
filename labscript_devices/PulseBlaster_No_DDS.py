@@ -284,7 +284,7 @@ class PulseblasterNoDDSWorker(Worker):
         self.time_based_shot_duration = None
         self.time_based_shot_end_time = None
 
-        self.runner = RunBaseClass(self.device_name, self.jump_address)
+        self.runner = RunBaseClass(self.device_name, self.jump_address, clock=True)
         self.runner.start()
 
         self.runner.set_start_callback(self.start_run)
@@ -496,7 +496,6 @@ class PulseblasterNoDDSWorker(Worker):
             self.program_clock(0, initial_values, fresh)
 
             self.runner.send_buffered()
-            self.runner.send_master_finished()
 
             return return_values
 

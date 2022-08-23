@@ -54,7 +54,7 @@ class PrawnBlasterWorker(Worker):
         self.cached_pll_params = {}
         # fmt: on
 
-        self.runner = RunBaseClass(self.device_name, self.jump_address)
+        self.runner = RunBaseClass(self.device_name, self.jump_address, clock=True)
         self.runner.start()
 
         self.all_waits_finished = zprocess.Event("all_waits_finished", type="post")
@@ -423,7 +423,6 @@ class PrawnBlasterWorker(Worker):
         self.program_clock(0)
 
         self.runner.send_buffered()
-        self.runner.send_master_finished()
 
         # All outputs end on 0
         final = {}
