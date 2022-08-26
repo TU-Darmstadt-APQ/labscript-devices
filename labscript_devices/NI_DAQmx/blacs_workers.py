@@ -564,6 +564,9 @@ class NI_DAQmxOutputWorker(Worker):
 
         # append programming times for this device
         with h5py.File(self.h5_file, 'a') as hdf5_file:
+            # Sometimes the programming time field persists within the hdf5 file. In this case we want to delete it. This may happen after failed shots.
+            if f'/data/programming_time_{self.device_name}' in hdf5_file:
+                del hdf5_file[f'/data/programming_time_{self.device_name}']
             hdf5_file.create_dataset(f'/data/programming_time_{self.device_name}', data=self.programming_times)
 
         for task, static, name in tasks:
