@@ -544,6 +544,8 @@ class PulseblasterNoDDSWorker(Worker):
         with h5py.File(self.h5file, 'a') as hdf5_file:
             hdf5_file.create_dataset(f'/data/programming_time_{self.device_name}', data=self.programming_time)
 
+        self.runner.check_err()
+
         if done_condition and not waits_pending:
             return True
         else:

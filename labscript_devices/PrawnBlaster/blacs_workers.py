@@ -518,6 +518,8 @@ class PrawnBlasterWorker(Worker):
                     )
                 time.sleep(0.01)
 
+        self.runner.check_err()
+
         return True
 
     def shutdown(self):

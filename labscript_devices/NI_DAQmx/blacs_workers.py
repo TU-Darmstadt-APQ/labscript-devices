@@ -463,10 +463,6 @@ class NI_DAQmxOutputWorker(Worker):
             start = timestamps[i]
             end = timestamps[i+1]
             
-            # Just overwrite every time as we are only interested in the last ones...
-            # DO_final_values, DO_task, DO_all_zero = self.program_buffered_DO(self.filter_data_by_time(times_table, DO_table, start, end))
-            # AO_final_values, AO_task, AO_all_zero = self.program_buffered_AO(self.filter_data_by_time(times_table, AO_table, start, end))
-
             section = {
                 "start": start,
                 "end": end,
@@ -476,8 +472,6 @@ class NI_DAQmxOutputWorker(Worker):
 
             if section['AO_values'] is not None and section['AO_values'] is not []:
                 AO_final_values = dict(zip(section['AO_values'].dtype.names, section['AO_values'][-1]))
-            # if section['DO_values'] is not None: TODO
-            #     DO_final_values = dict(zip(section['DO_values'].dtype.names, section['DO_values'][-1]))
 
             if section['DO_values'] is not None and section['DO_values'] is not []:
                 # TODO: currently hacky, as we compute this twice. here and when we do program buffered do
@@ -600,6 +594,8 @@ class NI_DAQmxOutputWorker(Worker):
         if abort:
             # Reprogram the initial states:
             self.program_manual(self.initial_values)
+
+        self.runner.check_err()
 
         return True
 
