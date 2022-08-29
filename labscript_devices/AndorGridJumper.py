@@ -154,8 +154,11 @@ class AndorGridJumperWorker(Worker):
         if not self.host:
             return False
 
-        self.get_grid(0)
-        return True
+        try:
+            self.get_grid(0)
+            return True
+        except:
+            return False
 
     def get_grid(self, t):
 
