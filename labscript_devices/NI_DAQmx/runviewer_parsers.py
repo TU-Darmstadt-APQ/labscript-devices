@@ -55,15 +55,15 @@ class NI_DAQmxParser(object):
         traces = {}
 
         if DO_table is not None:
-            ports_in_use = DO_table.dtype.names
-            for port_str in ports_in_use:
-                for line in range(ports[port_str]["num_lines"]):
-                    # Extract each digital value from the packed bits:
-                    line_vals = (((1 << line) & DO_table[port_str]) != 0).astype(float)
-                    if static_DO:
-                        line_vals = np.full(len(clock_ticks), line_vals[0])
-                    traces['%s/line%d' % (port_str, line)] = (clock_ticks, line_vals)
-
+            k = 0
+            for port_name in ports:
+                port = ports[port_name]
+                if port['supports_buffered']:
+                    for j in range(port['num_lines']):
+                        data = (DO_table & (1 << k)) >> k
+                        traces['%s/line%d' % (port_name, j)] = (clock_ticks, data)
+                        k += 1
+                
         if AO_table is not None:
             for chan in AO_table.dtype.names:
                 vals = AO_table[chan]

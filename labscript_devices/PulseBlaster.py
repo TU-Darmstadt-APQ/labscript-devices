@@ -1206,8 +1206,13 @@ class PulseBlasterParser(object):
             pass
             
         # get the pulse program
+        pulse_programs = []
         with h5py.File(self.path, 'r') as f:
-            pulse_program = f['devices/%s/PULSE_PROGRAM'%self.name][:]
+            g = f['devices/%s'%self.name]
+            print(g.keys())
+            for k in g.keys():
+                pulse_programs.append(g[k][:])
+            pulse_program = f['devices/%s/PULSE_PROGRAM_0'%self.name][:]
             # slow_clock_flag = eval(f['devices/%s'%self.name].attrs['slow_clock'])
             dds = {}
             for i in range(self.num_dds):
@@ -1222,71 +1227,81 @@ class PulseBlasterParser(object):
         for i in range(self.num_dds):
             for sub_chnl in ['freq', 'amp', 'phase']:
                 traces['dds %d_%s'%(i,sub_chnl)] = []   
-        
-        # now build the traces
+
         t = 0. if parent is None else PulseBlaster.trigger_delay # Offset by initial trigger of parent
-        i = 0
-        while i < len(pulse_program):
-            # ignore the first 2 instructions, they are dummy instructions for BLACS
-            if i < 2:
-                i += 1
-                continue
-            
-            row = pulse_program[i]
-            
-            if row['inst'] == 2: # Loop
-                loops = int(row['inst_data'])
+
+        def process_program(pulse_program):
+
+            nonlocal t
+            nonlocal clock
+            nonlocal traces
+
+            # now build the traces
+            i = 0
+            while i < len(pulse_program):
+                # ignore the first 2 instructions, they are dummy instructions for BLACS
+                if i < 2:
+                    i += 1
+                    continue
                 
-                buffer = {}
-                j = i
-                while loops > 0:
-                    looping = True
-                    while looping:
-                        row = pulse_program[j]
-                        # buffer the index of traces used for this instruction
-                        # Cuts the runtime down by ~60%
-                        # start_profile('loop_contents')
-                        if j not in buffer:
-                            clock.append(t)
-                            self._add_pulse_program_row_to_traces(traces, row, dds)
-                            buffer[j] = len(clock)-1
-                        else:                            
-                            clock.append(t)
-                            self._add_pulse_program_row_from_buffer(traces, buffer[j])
-                        # stop_profile('loop_contents')
+                row = pulse_program[i]
+                
+                if row['inst'] == 2: # Loop
+                    loops = int(row['inst_data'])
+                    
+                    buffer = {}
+                    j = i
+                    while loops > 0:
+                        looping = True
+                        while looping:
+                            row = pulse_program[j]
+                            # buffer the index of traces used for this instruction
+                            # Cuts the runtime down by ~60%
+                            # start_profile('loop_contents')
+                            if j not in buffer:
+                                clock.append(t)
+                                self._add_pulse_program_row_to_traces(traces, row, dds)
+                                buffer[j] = len(clock)-1
+                            else:                            
+                                clock.append(t)
+                                self._add_pulse_program_row_from_buffer(traces, buffer[j])
+                            # stop_profile('loop_contents')
+                                
+                            # start_profile('end_of_loop')
+                            t+= row['length']*1.0e-9
                             
-                        # start_profile('end_of_loop')
-                        t+= row['length']*1.0e-9
+                            if row['inst'] == 3: # END_LOOP
+                                looping = False
+                                # print 'end loop. j=%d, t=%.7f'%(j,t)
+                                j = int(row['inst_data']) if loops > 1 else j
+                                # print 'setting j=%d'%j
+                            else:
+                                # print 'in loop. j=%d, t=%.7f'%(j,t)
+                                j+=1
+                            # stop_profile('end_of_loop')
+                        loops -= 1
                         
-                        if row['inst'] == 3: # END_LOOP
-                            looping = False
-                            # print 'end loop. j=%d, t=%.7f'%(j,t)
-                            j = int(row['inst_data']) if loops > 1 else j
-                            # print 'setting j=%d'%j
-                        else:
-                            # print 'in loop. j=%d, t=%.7f'%(j,t)
-                            j+=1
-                        # stop_profile('end_of_loop')
-                    loops -= 1
-                    
-                i = j
-                # print 'i now %d'%i
-                    
-            else: # Continue
-                if row['inst'] == 8: #WAIT
-                    print('Wait at %.9f'%t)
-                    pass
-                clock.append(t)
-                self._add_pulse_program_row_to_traces(traces,row,dds)
-                t+= row['length']*1.0e-9
-            
-                if row['inst'] == 8 and parent is not None: #WAIT
-                    #TODO: Offset next time by trigger delay is not master pseudoclock
-                    t+= PulseBlaster.trigger_delay
-                    
-            
-            i += 1            
+                    i = j
+                    # print 'i now %d'%i
+                        
+                else: # Continue
+                    if row['inst'] == 8: #WAIT
+                        print('Wait at %.9f'%t)
+                        pass
+                    clock.append(t)
+                    self._add_pulse_program_row_to_traces(traces,row,dds)
+                    t += row['length']*1.0e-9
                 
+                    if row['inst'] == 8 and parent is not None: #WAIT
+                        #TODO: Offset next time by trigger delay is not master pseudoclock
+                        t += PulseBlaster.trigger_delay
+                        
+                
+                i += 1            
+        
+        for pp in pulse_programs:
+            process_program(pp)
+
         print('Stop time: %.9f'%t)
         # now put together the traces
         to_return = {}
