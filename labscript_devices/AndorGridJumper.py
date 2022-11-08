@@ -194,7 +194,8 @@ class AndorGridJumperWorker(Worker):
             if self.sections[self.current_section]['dummy']:
                 should_jump = True
             else:
-                grid = self.get_grid(self.sections[self.current_section]['end'])
+                grid_id = self.sections[self.current_section]['grid_id']
+                grid = self.get_grid(self.sections[self.current_section]['end'])[:,:,grid_id]
                 res_grid = self.sections[self.current_section]['grid']
 
                 if self.sections[self.current_section]['negative_grid']:
@@ -275,6 +276,9 @@ class AndorGridJumperWorker(Worker):
                 if 'negative_grid' in jump_data:
                     negative_grid = jump_data['negative_grid']
                 grid = jump_data['grid']
+                grid_id = 0
+                if 'grid_id' in jump_data:
+                    grid_id = jump_data['grid_id']
 
                 section = {
                     "start": start,
@@ -287,7 +291,8 @@ class AndorGridJumperWorker(Worker):
                     "negative_grid": negative_grid,
                     "grid": np.array(grid),
                     "to_time": jump['to_time'],
-                    "dummy": dummy
+                    "dummy": dummy,
+                    "grid_id": grid_id
                 }
             else:
                 section = {
@@ -300,7 +305,8 @@ class AndorGridJumperWorker(Worker):
                     "max_jumps": 0,
                     "jump_counter": 0,
                     "to_time": 0,
-                    "dummy": False
+                    "dummy": False,
+                    "grid_id": 0
                 }
 
             self.sections.append(section)
