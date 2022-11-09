@@ -4,14 +4,15 @@ from labscript import config, IntermediateDevice, Device, LabscriptError, set_pa
 from qtutils.qt.QtWidgets import QWidget, QLineEdit
 from labscript_utils.qtwidgets.toolpalette import ToolPaletteGroup
 import numpy as np
+import h5py
 import pyqtgraph as pg
 MIN_FREQUENCY = 1  # in Hz
 MAX_FREQUENCY = 150000000  # in Hz
 MIN_VOLTAGE = 0.05  # in V
 MAX_VOLTAGE = 10  # in V
 
-MIN_OFFSET = -0.1  # in V
-MAX_OFFSET = 0.1  # in V
+MIN_OFFSET = -10  # in V
+MAX_OFFSET = 10  # in V
 
 
 class HP33120A(IntermediateDevice):
@@ -19,8 +20,9 @@ class HP33120A(IntermediateDevice):
 
     description = 'HP 33120A AWG'
 
-    def __init__(self, name, GPIB_address, frequency, amplitude, offset, waveform, ext_trigger=False):
-        Device.__init__(self, name, None, 'GPIB')
+    def __init__(self, name, GPIB_address, frequency, amplitude, offset, waveform, ext_trigger=False, **kwargs):
+        # Following Phil's thesis, IntermediateDevice should be subclassed here:
+        IntermediateDevice.__init__(self, name, None, **kwargs)
 
         self.instructions = {}
 
@@ -196,8 +198,11 @@ class HP33120A_Worker(GPIBWorker):
         self.frequency = None
         self.amplitude = None
         self.offset = None
-        self.wave = None
+        self.wave = []
         self.ext_trigger = False
+        self.GPIB_connection.timeout = 3000
+        self.GPIB_connection.write('OUTP:LOAD INF')  # Set output_Load to infinity
+        self.GPIB_connection.write('VOLT:UNIT VPP')
 
     def program_manual(self, front_panel_values):
         frequency = front_panel_values['frequency']
@@ -214,7 +219,7 @@ class HP33120A_Worker(GPIBWorker):
             frequency = int(frequency)  # cast frequency to int!
             if frequency != self.frequency:
                 if not (frequency >= MIN_FREQUENCY and frequency < MAX_FREQUENCY):
-                    raise Exception("Frequency {:d} is out of range {:d} - {:d}. Is the frequency in Hz?".format(frequency, MIN_FREQUENCY, MAX_FREQUENCY))
+                    raise Exception("Frequency {} is out of range {} - {}. Is the frequency in Hz?".format(frequency, MIN_FREQUENCY, MAX_FREQUENCY))
 
                 self.GPIB_connection.write("FREQ {}".format(frequency))
                 self.frequency = frequency
@@ -223,7 +228,7 @@ class HP33120A_Worker(GPIBWorker):
             amplitude = float(amplitude)  # cast frequency to int!
             if amplitude != self.amplitude:
                 if amplitude < MIN_VOLTAGE or amplitude > MAX_VOLTAGE:
-                    raise Exception("Amplitude {:d} is out of range {:d} - {:d}. Is the volatage in V?".format(amplitude, MIN_VOLTAGE, MAX_VOLTAGE))
+                    raise Exception("Amplitude {} is out of range {} - {}. Is the voltage in V?".format(amplitude, MIN_VOLTAGE, MAX_VOLTAGE))
 
                 self.GPIB_connection.write("VOLT {0:.2f}".format(amplitude))
                 self.amplitude = amplitude
@@ -232,7 +237,7 @@ class HP33120A_Worker(GPIBWorker):
             offset = float(offset)  # cast frequency to int!
             if offset != self.offset:
                 if offset < MIN_OFFSET or offset > MAX_OFFSET:
-                    raise Exception("Offset voltage {:d} is out of range {:d} - {:d}. Is the offset volatage in V?".format(offset, MIN_VOLTAGE, MAX_VOLTAGE))
+                    raise Exception("Offset voltage {} is out of range {} - {}. Is the offset voltage in V?".format(offset, MIN_OFFSET, MAX_OFFSET))
 
                 self.GPIB_connection.write("VOLT:OFFS {0:.3f}".format(offset))
                 self.offset = offset
@@ -246,8 +251,23 @@ class HP33120A_Worker(GPIBWorker):
             self.ext_trigger = ext_trigger
 
     def setWaveForm(self, waveform):
+        # print('self.wave:', self.wave)
+        # print('waveform:', waveform)
+
+        # send_new_wave = False
+        # if len(self.wave) != len(waveform):
+        #     send_new_wave = True
+        # else:
+        #     print((self.wave-waveform).any())
+        #     print((self.wave-waveform).all())
+        #     if (self.wave-waveform).any():
+        #         send_new_wave = True
+        # if send_new_wave:
         if self.wave != waveform:
+            if len(waveform) > 500:
+                self.GPIB_connection.timeout = len(waveform) * 5  # Standard timeout is 3000. If waveform is to long, we need to increase timeout.
             sendString = "DATA VOLATILE"
+            print('timeout:', self.GPIB_connection.timeout)
             for i, value in enumerate(waveform):
                 sendString = "{0}, {1:.3f}".format(sendString, float(value))
             self.GPIB_connection.write(sendString)
