@@ -12,7 +12,7 @@ MIN_FREQUENCY = 1000  # in Hz
 MAX_FREQUENCY = 500000  # in Hz
 
 
-class RS_SignalGenerator(IntermediateDevice):
+class RS_SignalGenerator_FM(IntermediateDevice):
     allowed_children = [StaticAnalogQuantity]
 
     description = 'Rohde and Schwarz synthesized signal generator'
@@ -80,7 +80,7 @@ from qtutils.qt.QtGui import QDoubleValidator
 
 
 @BLACS_tab
-class RS_SignalGeneratorTab(DeviceTab):
+class RS_SignalGenerator_FMTab(DeviceTab):
 
     def initialise_GUI(self):
         layout = self.get_tab_layout()
@@ -235,14 +235,14 @@ class RS_SignalGeneratorTab(DeviceTab):
 
     def initialise_workers(self):
         worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address}
-        self.create_worker("main_worker", RS_SignalGeneratorWorker, worker_initialisation_kwargs)
+        self.create_worker("main_worker", RS_SignalGenerator_FMWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
 
 from labscript_devices.GPIBDevice import GPIBWorker
 
 
-class RS_SignalGeneratorWorker(GPIBWorker):
+class RS_SignalGenerator_FMWorker(GPIBWorker):
 
     def send_GPIB_frequency(self, frequency=None):
         # update the synthesizer with the given frequency.
