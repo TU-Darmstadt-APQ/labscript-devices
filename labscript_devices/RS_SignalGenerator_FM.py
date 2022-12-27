@@ -95,9 +95,9 @@ class RS_SignalGeneratorTab(DeviceTab):
         self.ramping_target_value = 20.000  # kHz
 
         # Capabilities
-        self.f_base_units = 'MHz'  # front panel values are in MHz!
-        self.f_base_min = MIN_FREQUENCY / 1E6  # 2000
-        self.f_base_max = MAX_FREQUENCY / 1E6  # 18000
+        self.f_base_units = 'kHz'  # front panel values are in kHz!
+        self.f_base_min = MIN_FREQUENCY / 1E3  # 2000
+        self.f_base_max = MAX_FREQUENCY / 1E3  # 18000
         self.f_base_step = 0.001  # step size for +/- buttons
         self.f_base_decimals = 6  # display 6 decimals accuracy
 
