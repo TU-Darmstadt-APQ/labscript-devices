@@ -243,7 +243,7 @@ class Siglent_SSG3000X_SignalGeneratorTab(DeviceTab):
             self.delay_ramping_counter = 0  # reset ramping delay counter if a shot ends, to prevent back ramping in a shot qequence
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {'IP_address': self.IP_address}
+        worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address}
         self.create_worker("main_worker", RS_SignalGeneratorWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
