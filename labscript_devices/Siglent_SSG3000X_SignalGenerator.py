@@ -24,14 +24,13 @@ class Siglent_SSG3000X_SignalGenerator(IntermediateDevice):
 
     description = 'Siglent synthesized signal generator'
 
-    def __init__(self, name, IP_address, **kwargs):
-        Device.__init__(self, name, None, 'IP', **kwargs)
+    def __init__(self, name, GPIB_address, **kwargs):
+        Device.__init__(self, name, None, 'GPIB', **kwargs)
 
         self.instructions = {}
 
-        self.IP_address = IP_address
-
-        self.BLACS_connection = self.IP_address
+        self.GPIB_address = GPIB_address
+        self.BLACS_connection = self.GPIB_address
 
     def add_device(self, output):
         # This device has 2 valid connection-ports: "freqeuncy" and "range"
@@ -97,7 +96,7 @@ class Siglent_SSG3000X_SignalGeneratorTab(DeviceTab):
 
     def initialise_GUI(self):
         layout = self.get_tab_layout()
-        ui_filepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'HP_8672A_test.ui')
+        ui_filepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'HP_8672A.ui')
         self.ui = UiLoader().load(ui_filepath)
         layout.addWidget(self.ui)
 
