@@ -248,10 +248,10 @@ class Siglent_SSG3000X_SignalGeneratorTab(DeviceTab):
         self.primary_worker = "main_worker"
 
 
-from labscript_devices.EthernetDevice import SocketWorker
+from labscript_devices.GPIBDevice import GPIBWorker
 
 
-class RS_SignalGeneratorWorker(SocketWorker):
+class RS_SignalGeneratorWorker(GPIBWorker):
 
     def send_frequency(self, frequency=None, ref=1):
         # update the synthesizer with the given frequency.
