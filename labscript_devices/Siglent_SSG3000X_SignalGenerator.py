@@ -265,7 +265,7 @@ class RS_SignalGeneratorWorker(GPIBWorker):
                 raise Exception("Frequency {:d} is out of range {:d} - {:d}. Is the frequency in Hz?".format(frequency, MIN_FREQUENCY, MAX_FREQUENCY))
 
         if frequency is not None:
-            sendStr = "AM:FREQ " + str(frequency) + " kHz\r\n"  # Send AM Frequency!
+            sendStr = "AM:FREQ " + str(frequency) + " kHz"  # Send AM Frequency!
             self.send_string(sendStr)
 
     def program_manual(self, front_panel_values):
