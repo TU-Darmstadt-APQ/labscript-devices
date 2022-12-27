@@ -153,7 +153,7 @@ class Siglent_SSG3000X_SignalGeneratorTab(DeviceTab):
 
         connection_table_entry = self.settings['connection_table'].find_by_name(self.settings['device_name'])
 
-        self.IP_address = connection_table_entry.BLACS_connection
+        self.GPIB_address = connection_table_entry.BLACS_connection
 
         if self.auto_ramping:  # if ramping is enabled, start the 'timer' for auto-ramping
             self.statemachine_timeout_add(self.ramping_delay, self.auto_ramp)  # every tick call auto_ramp()
