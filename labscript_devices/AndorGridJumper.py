@@ -195,13 +195,13 @@ class AndorGridJumperWorker(Worker):
                 should_jump = True
             else:
                 grid_id = self.sections[self.current_section]['grid_id']
-                grid = self.get_grid(self.sections[self.current_section]['end'])[:,:,grid_id]
+                grid = self.get_grid(self.sections[self.current_section]['end'])[:, :, grid_id].astype('uint8')
                 res_grid = self.sections[self.current_section]['grid']
 
                 if self.sections[self.current_section]['negative_grid']:
                     grid_full = np.any(grid)  # TODO
                 else:
-                    grid_full = np.all(grid & res_grid == res_grid)
+                    grid_full = np.all((grid & res_grid) == res_grid)
 
                 should_jump = grid_full
                 if self.sections[self.current_section]['inverted']:
@@ -289,7 +289,7 @@ class AndorGridJumperWorker(Worker):
                     "max_jumps": jump['max_jumps'],
                     "jump_counter": 0,
                     "negative_grid": negative_grid,
-                    "grid": np.array(grid),
+                    "grid": np.array(grid).astype('uint8'),
                     "to_time": jump['to_time'],
                     "dummy": dummy,
                     "grid_id": grid_id
