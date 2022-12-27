@@ -295,7 +295,7 @@ class RS_SignalGeneratorWorker(GPIBWorker):
         return {'frequency': frequency / 1e3}
 
     def send_string(self, string):
-        self.socket.sendall(string.encode('utf-8'))
+        self.GPIB_connection.write(string)
         time.sleep(.300)
 
 
