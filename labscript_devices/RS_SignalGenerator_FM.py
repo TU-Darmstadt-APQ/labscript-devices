@@ -293,7 +293,6 @@ class RS_SignalGenerator_FMWorker(GPIBWorker):
 
     def send_string(self, string):
         self.GPIB_connection.write(string)
-        time.sleep(.300)
 
 
 @runviewer_parser
