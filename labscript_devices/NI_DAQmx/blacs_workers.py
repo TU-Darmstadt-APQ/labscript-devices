@@ -108,30 +108,60 @@ class NI_DAQmxOutputWorker(Worker):
         self.DO_all_zero = True
 
         def is_finished_callback():
-            WAIT_TIME = 0.5
+            # WAIT_TIME = 0.5
+            return_val = True
             if self.AO_task is not None and self.AO_active:
                 try:
-                    self.AO_task.WaitUntilTaskDone(WAIT_TIME)
+                    self.AO_task.WaitUntilTaskDone(0)
+                    print("AO_task DONE")
                 except:
-                    return False
-                self.AO_task.StopTask()
+                    npts = uInt64()
+                    samples = uInt64()
+                    self.AO_task.GetWriteCurrWritePos(npts)
+                    self.AO_task.GetWriteTotalSampPerChanGenerated(samples)
+                    # Detect -1 even though they're supposed to be unsigned ints, -1
+                    # seems to indicate the task was not started:
+                    current = samples.value if samples.value != 2 ** 64 - 1 else -1
+                    total = npts.value if npts.value != 2 ** 64 - 1 else -1
+                    # print(f'AO_task at sample {current} of {total}')
+
+                    if current != total:
+                        # print("AO_task NOT DONE")
+                        return_val = False
+
 
                 
             if self.DO_task is not None and self.DO_active:
                 try:
-                    self.DO_task.WaitUntilTaskDone(WAIT_TIME)
+                    self.DO_task.WaitUntilTaskDone(0)
+                    # print("DO_task DONE")
                 except:
-                    return False
-                self.DO_task.StopTask()
 
-            return True
+                    npts = uInt64()
+                    samples = uInt64()
+                    self.DO_task.GetWriteCurrWritePos(npts)
+                    self.DO_task.GetWriteTotalSampPerChanGenerated(samples)
+                    # Detect -1 even though they're supposed to be unsigned ints, -1
+                    # seems to indicate the task was not started:
+                    current = samples.value if samples.value != 2 ** 64 - 1 else -1
+                    total = npts.value if npts.value != 2 ** 64 - 1 else -1
+                    # print(f'DO_task at sample {current} of {total}')
+
+                    if current != total:
+                        # print("DO_task NOT DONE")
+                        return_val = False
+
+
+            return return_val
 
         def load_section(next_section):
             start_t = time.perf_counter()
             if self.current_section != next_section:
                 if not self.static_AO and not self.AO_all_zero and self.AO_active:
+                    self.AO_task.StopTask()
                     self.AO_task.ClearTask()
                 if not self.static_DO and not self.DO_all_zero and self.DO_active:
+                    self.DO_task.StopTask()
                     self.DO_task.ClearTask()
                 self.program_buffered_AO(self.sections[next_section]['AO_values'])
                 self.program_buffered_DO(self.sections[next_section]['DO_values'])
@@ -240,7 +270,7 @@ class NI_DAQmxOutputWorker(Worker):
                     port, line = split_conn_DO(conn)
                     DO_data[port] |= value << line
             self.DO_task.WriteDigitalU32(
-                1, True, 10.0, DAQmx_Val_GroupByChannel, DO_data, written, None
+                1, True, -1, DAQmx_Val_GroupByChannel, DO_data, written, None
             )
         # TODO: return coerced/quantised values
         return {}
@@ -315,7 +345,7 @@ class NI_DAQmxOutputWorker(Worker):
             DO_table = DO_table[0:1]
         if self.static_DO or self.DO_all_zero:
             self.DO_task.StartTask()
-            self.DO_task.WriteDigitalLines(1,True,10.0,DAQmx_Val_GroupByChannel,do_write_data,do_read,None)
+            self.DO_task.WriteDigitalLines(1,True,-1,DAQmx_Val_GroupByChannel,do_write_data,do_read,None)
         else:
             # We use all but the last sample (which is identical to the
             # second last sample) in order to ensure there is one more
@@ -335,7 +365,7 @@ class NI_DAQmxOutputWorker(Worker):
             self.DO_task.WriteDigitalLines(
                             do_write_data.shape[0],
                             False,
-                            10.0,
+                            -1,
                             DAQmx_Val_GroupByScanNumber,
                             do_write_data,
                             do_read,
@@ -387,7 +417,7 @@ class NI_DAQmxOutputWorker(Worker):
             # Static AO. Start the task and write data, no timing configuration.
             self.AO_task.StartTask()
             self.AO_task.WriteAnalogF64(
-                1, False, 10.0, DAQmx_Val_GroupByChannel, AO_table, written, None
+                1, False, -1, DAQmx_Val_GroupByChannel, AO_table, written, None
             )
         else:
             # We use all but the last sample (which is identical to the second last
@@ -409,7 +439,7 @@ class NI_DAQmxOutputWorker(Worker):
             self.AO_task.WriteAnalogF64(
                 npts,
                 False,  # autostart
-                10.0,  # timeout
+                -1,  # timeout
                 DAQmx_Val_GroupByScanNumber,
                 AO_table[:-1],  # All but the last sample as mentioned above
                 written,
@@ -552,6 +582,8 @@ class NI_DAQmxOutputWorker(Worker):
         # Otherwise results in an error if output was incomplete. If aborting, call
         # ClearTask only.
 
+        self.runner.check_err()
+
         npts = uInt64()
         samples = uInt64()
         tasks = []
@@ -575,6 +607,8 @@ class NI_DAQmxOutputWorker(Worker):
                     try:
                         # Wait for task completion with a 1 second timeout:
                         task.WaitUntilTaskDone(1)
+                    except:
+                        pass
                     finally:
                         # Log where we were up to in sample generation, regardless of
                         # whether the above succeeded:
@@ -597,8 +631,6 @@ class NI_DAQmxOutputWorker(Worker):
         if abort:
             # Reprogram the initial states:
             self.program_manual(self.initial_values)
-
-        self.runner.check_err()
 
         return True
 
@@ -1212,7 +1244,7 @@ class NI_DAQmxWaitMonitorWorker(Worker):
 
     def calc_wait_times(self, abort=False):
 
-        if not abort and self.wait_table is not None:
+        if not abort and self.wait_table is not None and len(self.semiperiods) > 1:
             # Let's work out how long the waits were. The absolute times of each edge on
             # the wait monitor were:
             edge_times = np.cumsum(self.semiperiods)
