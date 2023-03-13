@@ -48,6 +48,9 @@ class AndorCamera(Camera):
     def expose(self, name, t, frametype):
         return Camera.expose(self, name, t, frametype)
 
+    def get_time_active_image(self, t):
+        return Camera.get_time_active_image(self, t)
+
 
 @BLACS_tab
 class AndorCameraTab(CameraTab):

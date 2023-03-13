@@ -89,6 +89,20 @@ class Camera(TriggerableDevice):
         self.exposures.append((name, t, frametype, duration, len(self.exposures)))
         return duration
 
+    """
+    Gets the time of the latest image at time t
+    """
+    def get_time_active_image(self, t):
+        
+        exposure_times = [x[1] for x in self.exposures]
+        exposure_times = list(filter(lambda ex_t: ex_t <= t, exposure_times))
+        
+        if len(exposure_times) == 0:
+            return None
+        else:
+            return max(exposure_times)
+
+
     def do_checks(self):
         # Check that all Cameras sharing a trigger device have exposures when we have exposures:
         for camera in self.trigger_device.child_devices:
