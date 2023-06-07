@@ -113,21 +113,21 @@ class NI_DAQmxOutputWorker(Worker):
             if self.AO_task is not None and self.AO_active:
                 try:
                     self.AO_task.WaitUntilTaskDone(0)
-                    print("AO_task DONE")
                 except:
-                    npts = uInt64()
-                    samples = uInt64()
-                    self.AO_task.GetWriteCurrWritePos(npts)
-                    self.AO_task.GetWriteTotalSampPerChanGenerated(samples)
-                    # Detect -1 even though they're supposed to be unsigned ints, -1
-                    # seems to indicate the task was not started:
-                    current = samples.value if samples.value != 2 ** 64 - 1 else -1
-                    total = npts.value if npts.value != 2 ** 64 - 1 else -1
-                    # print(f'AO_task at sample {current} of {total}')
+                    if self.AO_task is not None:
+                        npts = uInt64()
+                        samples = uInt64()
+                        self.AO_task.GetWriteCurrWritePos(npts)
+                        self.AO_task.GetWriteTotalSampPerChanGenerated(samples)
+                        # Detect -1 even though they're supposed to be unsigned ints, -1
+                        # seems to indicate the task was not started:
+                        current = samples.value if samples.value != 2 ** 64 - 1 else -1
+                        total = npts.value if npts.value != 2 ** 64 - 1 else -1
+                        # print(f'AO_task at sample {current} of {total}')
 
-                    if current != total:
-                        # print("AO_task NOT DONE")
-                        return_val = False
+                        if current != total:
+                            # print("AO_task NOT DONE")
+                            return_val = False
 
 
                 
@@ -137,19 +137,20 @@ class NI_DAQmxOutputWorker(Worker):
                     # print("DO_task DONE")
                 except:
 
-                    npts = uInt64()
-                    samples = uInt64()
-                    self.DO_task.GetWriteCurrWritePos(npts)
-                    self.DO_task.GetWriteTotalSampPerChanGenerated(samples)
-                    # Detect -1 even though they're supposed to be unsigned ints, -1
-                    # seems to indicate the task was not started:
-                    current = samples.value if samples.value != 2 ** 64 - 1 else -1
-                    total = npts.value if npts.value != 2 ** 64 - 1 else -1
-                    # print(f'DO_task at sample {current} of {total}')
+                    if self.DO_task is not None:
+                        npts = uInt64()
+                        samples = uInt64()
+                        self.DO_task.GetWriteCurrWritePos(npts)
+                        self.DO_task.GetWriteTotalSampPerChanGenerated(samples)
+                        # Detect -1 even though they're supposed to be unsigned ints, -1
+                        # seems to indicate the task was not started:
+                        current = samples.value if samples.value != 2 ** 64 - 1 else -1
+                        total = npts.value if npts.value != 2 ** 64 - 1 else -1
+                        # print(f'DO_task at sample {current} of {total}')
 
-                    if current != total:
-                        # print("DO_task NOT DONE")
-                        return_val = False
+                        if current != total and current != -1:
+                            # print("DO_task NOT DONE")
+                            return_val = False
 
 
             return return_val
