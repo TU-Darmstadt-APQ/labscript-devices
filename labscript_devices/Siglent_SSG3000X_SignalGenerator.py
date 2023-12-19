@@ -276,7 +276,7 @@ class RS_SignalGeneratorWorker(GPIBWorker):
         self.send_string('OUTP ON')
         self.send_string('AM:STAT ON')
         self.send_string('AM:WAVE SINE')
-        self.send_string('AM:DEPT 0.1')
+        self.send_string('AM:DEPT 0.2')
         self.send_string('MOD ON')
 
         return {}  # no need to adjust the values
