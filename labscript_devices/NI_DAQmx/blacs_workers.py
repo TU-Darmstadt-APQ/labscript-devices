@@ -714,6 +714,7 @@ class NI_DAQmxAcquisitionWorker(Worker):
                 # Send it to the broker
                 for i, channel in enumerate(self.manual_mode_chans):
                     self.socket.send_multipart(["{} {}\0".format(self.device_name,channel).encode('utf-8'), np.mean(self.read_array, 0)[i]]) # Only send mean for each channel
+                    # print("device_name", self.device_name, channel, np.mean(self.read_array, 0)[0])
         return 0
 
     def start_task(self, chans, rate):

@@ -33,7 +33,7 @@ class AndorCamera(Camera):
                                               "shutterMode", "acquisitionMode", "accCycleTime", "accNum", "kinCycleTime",
                                               "kinNum", "frameTransfer"]}
     )
-    def __init__(self, name, parent_device, connection, gain=0, preAmpGain=1.0, EMgainMode=2, save=1, vsspeed=3.4, hsspeed=3.0,
+    def __init__(self, name, parent_device, connection, gain=0, preAmpGain=1.0, EMgainMode=2, save=1, vsspeed=3.4, hsspeed=20.0,
                  vsamplitude=0, triggerMode=1, shutterMode=1, acquisitionMode=5, accCycleTime=1.0,
                  accNum=1, kinCycleTime=0, kinNum=2000, frameTransfer=0, **kwargs):
         Camera.__init__(self, name, parent_device, connection, **kwargs)
