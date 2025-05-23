@@ -6,7 +6,8 @@ You will create a virtual serial port using this script. This script will act as
 The virtual serial port should stay open while the simulation is running, so other code that expects to interact with the serial device can do so just as if the actual device were connected.
 
 In the userlib directory, run the following command:
-    python3 -m HV_stahl.emulateSerPort
+    cd labscript-suite/labscript-devices/labscript_devices/HV_stahl
+    python3 -m emulateSerPort
 
 """
 import os, pty, time
@@ -35,7 +36,7 @@ def test_serial():
             if command == "IDN":
                 response = device_identity.encode() 
                 os.write(master, response)
-            elif command.startswith("BS200 CH"):
+            elif command.startswith("HV200 CH"):
                 device, channel, voltage = command.split()[:3]
                 response = f"{channel} {voltage}\r"
                 os.write(master, response.encode())
