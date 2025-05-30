@@ -1,5 +1,6 @@
 #  GPIB ETHERNET ADAPTER implementation
 TODO
+- PROLOGIX
 
 
 ## Current possible utilization

@@ -1,6 +1,6 @@
 from labscript import IntermediateDevice, LabscriptError, set_passed_properties ,LabscriptError,set_passed_properties
 
-
+from GPIB_device import GPIBDevice
 
 
 class GPIBLANAdapter(IntermediateDevice):
@@ -10,11 +10,10 @@ class GPIBLANAdapter(IntermediateDevice):
           - device_properties (set per shot)
     """
 
-    @set_passed_properties(
-        property_names = {
-            'device_properties' : ["some_prop"]
-            }
-        )
+    allowed_children = [GPIBDevice]
+    description = 'Prologix_alike'
+
+    @set_passed_properties(property_names = {} )
     def __init__(self, 
                  name, 
                  address,
@@ -23,7 +22,6 @@ class GPIBLANAdapter(IntermediateDevice):
         IntermediateDevice.__init__(self, name, parent_device =None, **kwargs) 
 
         self.BLACS_connection = address
-
         # --------------------------------- Class attributes
         self.name = name
         self.timeout = timeout
