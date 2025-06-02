@@ -9,19 +9,18 @@ class HV_Tab(DeviceTab):
         # Analog output properties dictionary
         connection_table = self.settings['connection_table']
         properties = connection_table.find_by_name(self.device_name).properties
-
+        print(f" properties from connection table: {properties}")
         self.num_AO = properties['num_AO']
         self.base_unit = 'V'
         if self.num_AO > 0:
-            self.base_min = -properties['AO_range']
-            self.base_max = properties['AO_range']
+            self.base_min, self.base_max = properties['AO_range']
         else:
             self.base_min, self.base_max = None, None
         self.base_step = 10
         self.base_decimals = 3
         
         analog_properties = {}
-        for i in range(self.num_AO):
+        for i in range(1, self.num_AO + 1):
             analog_properties['CH%d' % i] = {
                 'base_unit': self.base_unit,
                 'min': self.base_min,
@@ -55,7 +54,7 @@ class HV_Tab(DeviceTab):
                                 background-color: #D0D0D0;
                             }
                         """)
-        self.send_button.clicked.connect(lambda: self.send_to_BS())
+        self.send_button.clicked.connect(lambda: self.send_to_HV())
 
         # Add centered layout to center the button
         center_layout = QHBoxLayout()
@@ -72,6 +71,7 @@ class HV_Tab(DeviceTab):
     def initialise_workers(self):
         # Get properties from connection table
         device = self.settings['connection_table'].find_by_name(self.device_name)
+
         if device is None:
             raise ValueError(f"Device '{self.device_name}' not found in the connection table.")
         
@@ -87,7 +87,7 @@ class HV_Tab(DeviceTab):
         
         self.create_worker(
             'main_worker',
-            'user_devices.HV_stahl.BLACS_workers.HV_Worker',
+            'labscript_devices.HV_stahl.BLACS_workers.HV_Worker',
             worker_kwargs,
             )
         
@@ -101,7 +101,7 @@ class HV_Tab(DeviceTab):
             and runs in the main thread. It queues the `send_to_HV()` function to be
             executed by the worker.
 
-            Used to reprogram the BS-1-10 device based on current front panel values.
+            Used to reprogram the device based on current front panel values.
             """
         try:
             yield (self.queue_work(self.primary_worker, 'send_to_HV', []))

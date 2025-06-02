@@ -11,28 +11,28 @@ def split_conn_AO(connection):
         raise ValueError(dedent(msg) % str(connection))
 
 def _ao_to_channel_name(ao_name: str) -> str:
-        """ Convert 'ao0' to 'CH0' """
+        """ Convert 'ao0' to 'CH1' """
         try:
-            channel_index = int(ao_name.replace('ao', ''))
+            channel_index = int(ao_name.replace('ao', '')) + 1
             return f'CH{channel_index}'
         except ValueError:
             raise ValueError(f"Impossible to convert from '{ao_name}'")
 
-def _get_channel_num(self, channel):
-        """Gets channel number with leading zeros 'XX' from strings like 'AOX' or 'channel X'.
+def _get_channel_num(channel: str) -> int:
+        """Gets channel number from strings like 'AOX' or 'channel X'.
         Args:
             channel (str): The name of the channel, e.g. 'AO0', 'AO12', or 'channel 3'.
 
         Returns:
-            str: Two-digit channel number as string, e.g. '01', '12'."""
+            int: e.g. 1..8 """
         ch_lower = channel.lower()
         if ch_lower.startswith("ao"):
-            channel_num = channel[2:]  # 'ao3' -> '3'
+            channel_num = int(channel[2:]) + 1  # 'ao0' -> '1'
         elif ch_lower.startswith("channel"):
-            _, channel_num = channel.split()  # 'channel 1' -> '1'
+            _, channel_num_str = channel.split()  # 'channel 1' -> '1'
+            channel_num = int(channel_num_str)
         else:
             msg = """Unexpected channel name format: """
             raise ValueError(dedent(msg) % str(channel))
 
-        channel_int = int(channel_num)
-        return f"{channel_int:02d}"
+        return channel_num

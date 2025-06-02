@@ -18,23 +18,20 @@ import h5py
 from .logger_config import logger
 
 class HV_(IntermediateDevice):
-    description = 'HV_Series' # take from models cap
-    
-    #@set_passed_properties({"connection_table_properties": ["port", "baud_rate", "num_AO"]})
+    description = 'HV_Series'
+
     @set_passed_properties(
         property_names={
             "connection_table_properties": [
-                "port",
-                "baud_rate",
                 "AO_range",
                 "num_AO",
-                "static_AO",
-            ],
-            "device_properties": ["num_AO"],
+                "port",
+                "baud_rate"
+            ]
         }
     )
     def __init__(self, name, port='', baud_rate=9600, parent_device=None, num_AO=0, AO_range=0, static_AO=None, **kwargs):
-        """Generic class for NI_DAQmx devices.
+        """Generic class for HV stahl devices.
 
         Generally over-ridden by device-specific subclasses that contain
         the introspected default values.
@@ -53,6 +50,7 @@ class HV_(IntermediateDevice):
         self.static_AO = static_AO
         IntermediateDevice.__init__(self, name, parent_device, **kwargs)
         self.BLACS_connection = '%s,%s' % (port, str(baud_rate))
+        logger.debug(f"INITIALIZING: {name} - {AO_range}")
     
     def add_device(self, device):
         IntermediateDevice.add_device(self, device)
@@ -86,7 +84,7 @@ class HV_(IntermediateDevice):
         """Collect analog output data and create the output table"""
         if not analogs:
             return None
-        n_timepoints = 1 if (self.static_AO is not None) else len(times)
+        n_timepoints = len(times)
         connections = sorted(analogs, key=split_conn_AO)
         dtypes = [('time', np.float64)] + [(c, np.float32) for c in connections] # first column is time ('t' from seq. logic)
         analog_out_table = np.empty(n_timepoints, dtype=dtypes)

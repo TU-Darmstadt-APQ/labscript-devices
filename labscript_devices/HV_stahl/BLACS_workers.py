@@ -1,14 +1,12 @@
 from blacs.tab_base_classes import Worker
 from labscript import LabscriptError
-import serial
-from user_devices.logger_config import logger
-import time
-import datetime
+from .logger_config import logger
+from datetime import datetime
 import h5py
 import numpy as np
 from zprocess import rich_print
 from labscript_utils import properties
-from .utils import _get_channel_num, _ao_to_channel_name
+from .utils import _ao_to_channel_name, _get_channel_num
 
 class HV_Worker(Worker):
     def init(self):
@@ -49,7 +47,27 @@ class HV_Worker(Worker):
         Runs at the end of the shot."""
         rich_print(f"---------- Manual MODE start: ----------", color=PINK)
         self.front_panel_values = front_panel_values
-        print(f"front panel values: {front_panel_values}")
+
+        if not getattr(self, 'restored_from_final_values', False):
+            if self.verbose is True:
+                print("Front panel values (before shot):")
+                for ch_name, voltage in front_panel_values.items():
+                    print(f"  {ch_name}: {voltage:.2f} V")
+
+            # Restore final values from previous shot, if available
+            if self.final_values:
+                for ch_num, value in self.final_values.items():
+                    front_panel_values[f'CH{int(ch_num)}'] = value
+
+            if self.verbose is True:
+                print("\nFront panel values (after shot):")
+                for ch_num, voltage in self.final_values.items():
+                    print(f"  {ch_num}: {voltage:.2f} V")
+
+            self.final_values = {}  # Empty after restoring
+            self.restored_from_final_values = True
+
+
         return front_panel_values
 
     def check_remote_values(self): # reads the current settings of the device, updating the BLACS_tab widgets 
@@ -80,16 +98,16 @@ class HV_Worker(Worker):
                 print(f"\n time = {time}")
                 logger.info(f"Programming the device from buffered at time {time} with following values")
 
-            for channel_name in row.dtype.names:
-                if channel_name.lower() == 'time':  # Skip the time column
+            for conn in row.dtype.names:
+                if conn.lower() == 'time':  # Skip the time column
                     continue
 
-                voltage = row[channel_name]
-                channel_num = self._get_channel_num(channel_name)
-                self.voltage_source.set_voltage(channel_num, voltage)
+                voltage = row[conn]
+                channel_num = _get_channel_num(conn) # 'ao0' --> 1
+                self.high_voltage_source.set_voltage(channel_num, voltage)
 
                 if self.verbose is True:
-                    print(f"→ Channel: {channel_name} (#{channel_num}), Voltage: {voltage}")
+                    print(f"→ Channel: {conn} (#{channel_num}), Voltage: {voltage}")
 
                 # Store the values
                 self.final_values[channel_num] = voltage
@@ -97,29 +115,14 @@ class HV_Worker(Worker):
         rich_print(f"---------- End transition to Buffered: ----------", color=BLUE)
         return
         
+    def abort_transition_to_buffered(self):
+        return self.transition_to_manual()
 
     def transition_to_manual(self): 
         """transitions the device from buffered to manual mode to read/save measurements from hardware
         to the shot h5 file as results. 
         Runs at the end of the shot."""
-        if self.verbose is True:
-            print("Front panel values (before shot):")
-            for ch_name, voltage in self.front_panel_values.items():
-                print(f"  {ch_name}: {voltage:.2f} V")
-
-            # Restore final values from previous shot, if available
-        if self.final_values and not getattr(self, 'restored_from_final_values', False):
-            for ch_num, value in self.final_values.items():
-                self.front_panel_values[f'channel {int(ch_num)}'] = value
-            self.restored_from_final_values = True
-
-        if self.verbose is True:
-            print("\nFront panel values (after shot):")
-            for ch_num, voltage in self.final_values.items():
-                print(f"  {ch_num}: {voltage:.2f} V")
-
-        self.final_values = {}  # Empty after restoring
-        return
+        return True
     
     def send_to_HV(self, kwargs):
         """Sends manual values from the front panel to the HV device.
@@ -133,18 +136,26 @@ class HV_Worker(Worker):
         self._append_front_panel_values_to_manual(self.front_panel_values, current_time)
 
     def _program_manual(self, front_panel_values):
-        """Sends voltage values to the device for all channels using VoltageSource.
-        """
-        if self.verbose is True:
+        """Sends voltage values to the device for all channels using HighVoltageSource.
+
+           Parameters:
+           - front_panel_values (dict): Dictionary of voltages keyed by channel name (e.g., 'CH1', 'CH2', ...).
+           """
+        if self.verbose:
             print("\nProgramming the device with the following values:")
             logger.info("Programming the device from manual with the following values:")
 
-        for channel_num in range(int(self.num_AO)):
-            channel_name = f'channel {channel_num}'
-            voltage = front_panel_values.get(channel_name, 0.0)
-            if self.verbose is True:
+        for channel_num in range(1, int(self.num_AO) + 1):
+            channel_name = f'CH{channel_num}' # 'CH1'
+            try:
+                voltage = front_panel_values[channel_name]
+            except Exception as e:
+                raise ValueError(f"Error accessing front panel values for channel '{channel_name}': {e}")
+
+            if self.verbose:
                 print(f"→ {channel_name}: {voltage:.2f} V")
-                logger.info(f"Setting {channel_name} to {voltage:.2f} V (manual mode)")
+            logger.info(f"Setting {channel_name} to {voltage:.2f} V (manual mode)")
+
             self.high_voltage_source.set_voltage(channel_num, voltage)
 
     def _append_front_panel_values_to_manual(self, front_panel_values, current_time):
@@ -187,41 +198,14 @@ class HV_Worker(Worker):
             # Create new data row
             new_row = np.zeros((1,), dtype=dtype)
             new_row['time'] = current_time
-            for conn in connections:
-                channel_name = self._ao_to_channel_name(conn)
+            for conn in connections: # 'ao0'
+                channel_name = _ao_to_channel_name(conn) # 'ao0' --> 'CH1'
                 new_row[conn] = front_panel_values.get(channel_name, 0.0)
 
             # Add new row to table
             dset.resize(old_shape + 1, axis=0)
             dset[old_shape] = new_row[0]
 
-
-    # @staticmethod
-    # def _ao_to_channel_name(ao_name: str) -> str:
-    #     """ Convert 'ao0' to 'CH0' """
-    #     try:
-    #         channel_index = int(ao_name.replace('ao', ''))
-    #         return f'CH{channel_index}'
-    #     except ValueError:
-    #         raise ValueError(f"Impossible to convert from '{ao_name}'")
-
-    # def _get_channel_num(self, channel):
-    #     """Gets channel number with leading zeros 'XX' from strings like 'AOX' or 'channel X'.
-    #     Args:
-    #         channel (str): The name of the channel, e.g. 'AO0', 'AO12', or 'channel 3'.
-
-    #     Returns:
-    #         str: Two-digit channel number as string, e.g. '01', '12'."""
-    #     ch_lower = channel.lower()
-    #     if ch_lower.startswith("ao"):
-    #         channel_num = channel[2:]  # 'ao3' -> '3'
-    #     elif ch_lower.startswith("channel"):
-    #         _, channel_num = channel.split()  # 'channel 1' -> '1'
-    #     else:
-    #         raise LabscriptError(f"Unexpected channel name format: '{channel}'")
-
-    #     channel_int = int(channel_num)
-    #     return f"{channel_int:02d}"
 
 
 # --------------------contants

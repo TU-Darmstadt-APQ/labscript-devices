@@ -6,7 +6,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(BASE_DIR, 'user_devices.log')
 
 # Create logger
-logger = logging.getLogger("user_devices")
+logger = logging.getLogger("logs")
 logger.setLevel(logging.DEBUG)
 
 # Create file handler and set level to debug

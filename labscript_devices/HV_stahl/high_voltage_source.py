@@ -72,7 +72,7 @@ class HighVoltageSource:
                     f"Sent command: {send_str.strip()!r}\n"
                     f"Expected response: {expected_response!r}\n"
                     f"Actual response: {response!r}\n"
-                    f"Device: BS-1-10 at port {self.port!r}"
+                    f"Device: HV Series at port {self.port!r}"
                 )
         except Exception as e:
             raise LabscriptError(f"Error in set_voltage: {e}")

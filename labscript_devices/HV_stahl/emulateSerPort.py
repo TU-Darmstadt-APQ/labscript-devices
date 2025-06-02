@@ -6,12 +6,11 @@ You will create a virtual serial port using this script. This script will act as
 The virtual serial port should stay open while the simulation is running, so other code that expects to interact with the serial device can do so just as if the actual device were connected.
 
 In the userlib directory, run the following command:
-    cd labscript-suite/labscript-devices/labscript_devices/HV_stahl
-    python3 -m emulateSerPort
+    python -m labscript_devices.HV_stahl.emulateSerPort
 
 """
 import os, pty, time
-from logger_config import logger
+from .logger_config import logger
 
 def read_command(master):
     """ Reads the command until the '\r' character is encountered.
@@ -28,7 +27,7 @@ def test_serial():
     print(f"For HV 200 use: {port_name}")
     
     while True:
-        device_identity = "HV200 200 4 b\r"  
+        device_identity = "HV200 200 4 b\r"
         command = read_command(master).decode().strip()
         if command:
             print(f"command {command}")

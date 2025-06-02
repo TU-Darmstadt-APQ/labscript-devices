@@ -1,0 +1,14 @@
+{
+  "HV_200_8": {
+    "AO_range": [-200,200],
+    "static_AO": 0,
+    "num_AO": 8,
+    "baud_rate": 9600
+  },
+   "HV_250_8": {
+    "AO_range": [-250,250],
+     "static_AO": 0,
+    "num_AO": 8,
+    "baud_rate": 9600
+  }
+}
