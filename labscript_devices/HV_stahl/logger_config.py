@@ -21,4 +21,4 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 # Test the logger in the config file
-logger.info("Logger initialized successfully")
+# logger.info("Logger initialized successfully")

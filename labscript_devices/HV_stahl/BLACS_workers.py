@@ -7,12 +7,18 @@ import numpy as np
 from zprocess import rich_print
 from labscript_utils import properties
 from .utils import _ao_to_channel_name, _get_channel_num
+import threading
+import time
 
 class HV_Worker(Worker):
     def init(self):
         """Initialises communication with the device. When BLACS (re)starts"""
         self.final_values = {}  # [[channel_nums(ints)],[voltages(floats)]]
         self.verbose = True
+
+        self.thread = None
+        self._stop_event = threading.Event()
+        self._finished_event = threading.Event()
 
         try:
             # Try to establish a serial connection
@@ -45,7 +51,7 @@ class HV_Worker(Worker):
         """Allows for user control of the device via the BLACS_tab, 
         setting outputs to the values set in the BLACS_tab widgets. 
         Runs at the end of the shot."""
-        rich_print(f"---------- Manual MODE start: ----------", color=PINK)
+        rich_print(f"---------- Manual MODE start: ----------", color=BLUE)
         self.front_panel_values = front_panel_values
 
         if not getattr(self, 'restored_from_final_values', False):
@@ -67,10 +73,11 @@ class HV_Worker(Worker):
             self.final_values = {}  # Empty after restoring
             self.restored_from_final_values = True
 
-
         return front_panel_values
 
     def check_remote_values(self): # reads the current settings of the device, updating the BLACS_tab widgets 
+        #todo: run at the beginning of program_manual to ensure the programmed values are set correctly.
+        # final_values and actual values should be the same.
         return
 
     def transition_to_buffered(self, device_name, h5_file, initial_values, fresh): 
@@ -86,42 +93,75 @@ class HV_Worker(Worker):
         self.h5file = h5_file  # Store path to h5 to write back from front panel
         self.device_name = device_name
 
+        self._stop_event.clear()
+        self._finished_event.clear()
+
         with h5py.File(h5_file, 'r') as hdf5_file:
             group = hdf5_file['devices'][device_name]
             AO_data = group['AO'][:]
-            self.device_prop = properties.get(hdf5_file, device_name, 'device_properties')
-            print("======== Device Properties : ", self.device_prop, "=========")
 
+        # prepare events
+        events = []
         for row in AO_data:
-            if self.verbose is True:
-                time = row["time"]
-                print(f"\n time = {time}")
-                logger.info(f"Programming the device from buffered at time {time} with following values")
+            t = row['time']
+            voltages = {ch: row[ch] for ch in row.dtype.names if ch != 'time'}
+            events.append((t, voltages))
 
-            for conn in row.dtype.names:
-                if conn.lower() == 'time':  # Skip the time column
-                    continue
-
-                voltage = row[conn]
-                channel_num = _get_channel_num(conn) # 'ao0' --> 1
-                self.high_voltage_source.set_voltage(channel_num, voltage)
-
-                if self.verbose is True:
-                    print(f"→ Channel: {conn} (#{channel_num}), Voltage: {voltage}")
-
-                # Store the values
-                self.final_values[channel_num] = voltage
+        self.thread = threading.Thread(target=self._run_experiment_sequence, args=(events,))
+        self.thread.start()
 
         rich_print(f"---------- End transition to Buffered: ----------", color=BLUE)
         return
-        
+
+    def _run_experiment_sequence(self, events):
+        try:
+            self._wait_for_trigger()
+            if self._stop_event.is_set():
+                return
+
+            for t, voltages in events:
+                time.sleep(t)
+                for conn_name, voltage in voltages.items():
+                    channel_num = _get_channel_num(conn_name)  # 'ao1' --> '01'
+                    self.high_voltage_source.set_voltage(channel_num, voltage)
+                    self.final_values[channel_num] = voltage
+                    if self.verbose:
+                        print(f"[{t:.3f}s] --> Set {conn_name} (#{channel_num}) = {voltage}")
+                    if self._stop_event.is_set():
+                        return
+        finally:
+            self._finished_event.set()
+            print(f"[Thread] finished all events !")
+
+    def _wait_for_trigger(self):
+        """Wait for external TTL trigger."""
+        print("Waiting for trigger...")
+        while not self._stop_event.is_set():
+            if self._check_trigger():
+                print("Trigger received! Start experiment sequence")
+                return
+            # time.sleep(0.01)
+        print("Stopped waiting for trigger.")
+
+    def _check_trigger(self):
+        #todo: check if TTL received
+        return True
+
     def abort_transition_to_buffered(self):
         return self.transition_to_manual()
 
     def transition_to_manual(self): 
         """transitions the device from buffered to manual mode to read/save measurements from hardware
         to the shot h5 file as results. 
-        Runs at the end of the shot."""
+
+        Ensure background thread has finished before exiting the shot."""
+        # self._stop_event.set()
+        self.thread.join()
+
+        if not self._finished_event.is_set():
+            print("Warning: experiment sequence did not finish properly.")
+        else:
+            print("Experiment sequence completed successfully.")
         return True
     
     def send_to_HV(self, kwargs):
