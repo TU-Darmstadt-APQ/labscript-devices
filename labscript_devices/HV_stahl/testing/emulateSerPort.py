@@ -14,13 +14,15 @@ Run following command in the corresponding folder.
 import os, pty, threading, time
 import sys
 
+# FIXME: KeyboardInterrupt doesnt stop the emulator properly; console output is misaligned (staircase ahh like)
+
 class HV_Emulator:
     def __init__(self, verbose=False):
         self.verbose = verbose
         self.master, self.slave = pty.openpty()
         self.running = False
         self.port_name = os.ttyname(self.slave)
-        self.thread = threading.Thread(target=self._run)
+        self.thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
         self.running = True
@@ -45,6 +47,8 @@ class HV_Emulator:
                 elif command.startswith("HV341 CH"):
                     _, channel, voltage = command.split()[:3]
                     self._respond(f"{channel} {voltage}\r")
+                elif command.startswith("HV341 Q"):
+                    self._respond("22,222 V\r")
                 else:
                     self._respond("err\r")
             except Exception as e:

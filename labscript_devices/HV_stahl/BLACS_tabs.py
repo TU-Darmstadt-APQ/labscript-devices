@@ -35,31 +35,15 @@ class HV_Tab(DeviceTab):
         _, ao_widgets, _ = self.auto_create_widgets()
         self.auto_place_widgets(("Analog outputs", ao_widgets))
 
-        # Add button to reprogramm device from manual mode
-        self.send_button = QPushButton("Send to device")
-        self.send_button.setSizePolicy(QSP.Fixed, QSP.Fixed)
-        self.send_button.adjustSize()
-        self.send_button.setStyleSheet("""
-                            QPushButton {
-                                border: 1px solid #B8B8B8;
-                                border-radius: 3px;
-                                background-color: #F0F0F0;
-                                padding: 4px 10px;
-                                font-weight: light;
-                            }
-                            QPushButton:hover {
-                                background-color: #E0E0E0;
-                            }
-                            QPushButton:pressed {
-                                background-color: #D0D0D0;
-                            }
-                        """)
-        self.send_button.clicked.connect(lambda: self.send_to_HV())
+        # Create buttons to send-to-device and check-remote-values
+        self.send_button = self._create_button("Send to device", self.send_to_HV)
+        self.check_button = self._create_button("Check remote values", self.check_remote_values)
 
         # Add centered layout to center the button
         center_layout = QHBoxLayout()
         center_layout.addStretch()
         center_layout.addWidget(self.send_button)
+        center_layout.addWidget(self.check_button)
         center_layout.addStretch()
 
         # Add center layout on device layout
@@ -107,3 +91,43 @@ class HV_Tab(DeviceTab):
             yield (self.queue_work(self.primary_worker, 'send_to_HV', []))
         except Exception as e:
             logger.debug(f"Error by send work to worker(send_to_HV): \t {e}")
+
+    @define_state(MODE_MANUAL, True)
+    def check_remote_values(self):
+        """Queue a manual check-remote-values operation from the GUI.
+
+            This function is triggered from the BLACS tab (by pressing a button)
+            and runs in the main thread. It queues the `check_remote_values()` function to be
+            executed by the worker.
+
+            Used to reprogram the device based on current front panel values, if mismatched.
+            """
+        try:
+            yield (self.queue_work(self.primary_worker, 'check_remote_values', []))
+        except Exception as e:
+            logger.debug(f"Error by send work to worker(check_remote_values): \t {e}")
+
+
+    def _create_button(self, text, on_click_callback):
+        """Creates a styled QPushButton with consistent appearance and connects it to the given callback."""
+        button = QPushButton(text)
+        button.setSizePolicy(QSP.Fixed, QSP.Fixed)
+        button.adjustSize()
+        button.setStyleSheet("""
+                QPushButton {
+                    border: 1px solid #B8B8B8;
+                    border-radius: 3px;
+                    background-color: #F0F0F0;
+                    padding: 4px 10px;
+                    font-weight: light;
+                }
+                QPushButton:hover {
+                    background-color: #E0E0E0;
+                }
+                QPushButton:pressed {
+                    background-color: #D0D0D0;
+                }
+            """)
+        button.clicked.connect(lambda: on_click_callback())
+        logger.debug(f"Button {text} is created")
+        return button

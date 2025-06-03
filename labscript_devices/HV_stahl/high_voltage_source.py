@@ -22,6 +22,11 @@ class HighVoltageSource:
         self.device_voltage_range = device_info[1]  # For example, '50'
         self.device_channels = device_info[2]  # For example, '10'
         self.device_output_type = device_info[3]  # For example, 'b' (bipolar, unipolar, quadrupole, steerer supply)
+        logger.info(
+            f"Connected to HV-Series on {self.port} with baud rate {self.baud_rate}\n"
+            f"Device Serial: {self.device_serial}, Voltage Range: {self.device_voltage_range}, "
+            f"Channels: {self.device_channels}, Output Type: {self.device_output_type}"
+        )
 
     def identify_query(self):
         """Send identification instruction through serial connection, receive response.
@@ -55,7 +60,6 @@ class HighVoltageSource:
             LabscriptError: If the response from device is incorrect.
         """
         try:
-            channel_num = f"{int(channel_num) + 1}"
             channel = f"CH{int(channel_num):02d}"
             scaled_voltage = self._scale_to_normalized(float(value), float(self.device_voltage_range))
             send_str = f"{self.device_serial} {channel} {scaled_voltage:.6f}\r"
@@ -110,18 +114,19 @@ class HighVoltageSource:
         """
         Query voltage on the channel.
         Args:
-            channel_num (int): Channel number.
+            channel_num (int): Channel number, starts with 1.
         Returns:
             float: voltage in Volts.
         Raises:
             LabscriptError: If the response format is invalid or parsing fails.
         """
-        channel_num = f"{int(channel_num) + 1}"
         channel = f"{int(channel_num):02d}" # 1 -> '01'
         send_str = f"{self.device_serial} Q{channel}\r" # 'DDDDD QXX'
         self.connection.write(send_str.encode())
 
         response = self.connection.readline().decode().strip()  # '+/-yy,yyy V'
+
+        logger.debug(f"Command: {send_str!r} --> response: {response!r}")
 
         if response.endswith("V"):
             try:

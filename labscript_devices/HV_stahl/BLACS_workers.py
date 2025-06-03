@@ -13,9 +13,10 @@ import time
 class HV_Worker(Worker):
     def init(self):
         """Initialises communication with the device. When BLACS (re)starts"""
-        self.final_values = {}  # [[channel_nums(ints)],[voltages(floats)]]
+        self.final_values = {}  # [[channel_nums(ints)],[voltages(floats)]] to update GUI after shot
         self.verbose = True
 
+        # for running the buffered experiment in a separate thread:
         self.thread = None
         self._stop_event = threading.Event()
         self._finished_event = threading.Event()
@@ -24,18 +25,6 @@ class HV_Worker(Worker):
             # Try to establish a serial connection
             from .high_voltage_source import HighVoltageSource
             self.high_voltage_source = HighVoltageSource(self.port, self.baud_rate)
-
-            # Get device information
-            self.device_serial = self.high_voltage_source.device_serial  # For example, 'HV023'
-            self.device_voltage_range = self.high_voltage_source.device_voltage_range  # For example, '50'
-            self.device_channels = self.high_voltage_source.device_channels  # For example, '10'
-            self.device_output_type = self.high_voltage_source.device_output_type  # For example, 'b' (bipolar, unipolar, quadrupole, steerer supply)
-
-            logger.info(
-                f"Connected to HV-Series on {self.port} with baud rate {self.baud_rate}\n"
-                f"Device Serial: {self.device_serial}, Voltage Range: {self.device_voltage_range}, "
-                f"Channels: {self.device_channels}, Output Type: {self.device_output_type}"
-            )
 
         except LabscriptError as e:
             raise RuntimeError(f"HV-series identification failed: {e}")
@@ -50,7 +39,7 @@ class HV_Worker(Worker):
     def program_manual(self, front_panel_values): 
         """Allows for user control of the device via the BLACS_tab, 
         setting outputs to the values set in the BLACS_tab widgets. 
-        Runs at the end of the shot."""
+        Runs before and after shot."""
         rich_print(f"---------- Manual MODE start: ----------", color=BLUE)
         self.front_panel_values = front_panel_values
 
@@ -75,10 +64,29 @@ class HV_Worker(Worker):
 
         return front_panel_values
 
-    def check_remote_values(self): # reads the current settings of the device, updating the BLACS_tab widgets 
-        #todo: run at the beginning of program_manual to ensure the programmed values are set correctly.
-        # final_values and actual values should be the same.
-        return
+    def check_remote_values(self, kwargs): # reads the current settings of the device, updating the BLACS_tab widgets
+        """Compares actual voltages on the hardware to expected front panel values.
+           If any mismatch > 0.01V is found, reprogram the device and return False.
+           """
+        results = {}
+        mismatch_found = False
+
+        self.num_AO = len(self.front_panel_values)
+        for i in range(1, self.num_AO + 1):
+            ch_name = f'CH{i}'
+            actual = self.high_voltage_source.voltage_query(i)
+            expected = self.front_panel_values[ch_name]
+            results[ch_name] = actual
+
+            if abs(actual - expected) > 0.01:
+                print(f"WARNING: Mismatch on {ch_name}: expected {expected}, got {actual}")
+                mismatch_found = True
+
+        if mismatch_found:
+            # Optionally, confirm with the user before sending
+            self.send_to_HV(kwargs)
+            return False
+        return True
 
     def transition_to_buffered(self, device_name, h5_file, initial_values, fresh): 
         """transitions the device to buffered shot mode, 
@@ -159,7 +167,7 @@ class HV_Worker(Worker):
         self.thread.join()
 
         if not self._finished_event.is_set():
-            print("Warning: experiment sequence did not finish properly.")
+            print("WARNING: experiment sequence did not finish properly.")
         else:
             print("Experiment sequence completed successfully.")
         return True
