@@ -10,6 +10,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# my-private ignore
+labscript_devices/GPIB_LAN_Adapter/IgnoreMe/*
+
+
 # C extensions
 *.so
 

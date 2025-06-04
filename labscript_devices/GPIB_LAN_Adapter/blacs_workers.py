@@ -3,10 +3,8 @@ import numpy as np
 import h5py
 from zprocess import rich_print
 from blacs.tab_base_classes import Worker
-from  labscript_utils import properties
+from labscript_utils import properties
 
-# from matplotlib.ticker import MaxNLocator
-# from matplotlib import pyplot as plt
 
 
 class GPIBLANAdapterWorker(Worker):
@@ -15,21 +13,21 @@ class GPIBLANAdapterWorker(Worker):
     The BLACS_tab spawns a process that uses this class to communicate with the hardware.
     """
     def init(self):
-        # ----------------------------------------- Initialize osci
+        # ----------------------------------------- Initialize
         global GPIBLANAdapterDevice
         from .GPIBLANAdapter import GPIBLANAdapterDevice
+
         self.adap = GPIBLANAdapterDevice(
             address= self.address,
-            verbose = False)
+            timeout= 1
+            )
 
         # ----------------------------------------- Configurations attributes
 
 
-
         # ----------------------------------------- Buffered/Manuel flags
-
-
         
+
     def transition_to_buffered( self, device_name, h5file , front_panel_values, refresh): 
         rich_print(f"====== Begin transition to Buffered: ======", color='#66D9EF')    
         
@@ -80,4 +78,14 @@ class GPIBLANAdapterWorker(Worker):
     # ------------------------------------------ Blacs Tabs functions
     def shutdown(self):
         rich_print(f"====== transition to manual: ======", color= '#AE81FF')
-        return # self.scope.close()
+        return 
+    
+    # -----
+    def get_address_gpib(self):
+        return str(self.adap.get_address_gpib()).strip()
+    
+
+    def get_device_name(self):
+        return "Dummy Device"
+
+    
