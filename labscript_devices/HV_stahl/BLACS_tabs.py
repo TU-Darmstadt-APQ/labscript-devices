@@ -92,22 +92,6 @@ class HV_Tab(DeviceTab):
         except Exception as e:
             logger.debug(f"Error by send work to worker(send_to_HV): \t {e}")
 
-    @define_state(MODE_MANUAL, True)
-    def check_remote_values(self):
-        """Queue a manual check-remote-values operation from the GUI.
-
-            This function is triggered from the BLACS tab (by pressing a button)
-            and runs in the main thread. It queues the `check_remote_values()` function to be
-            executed by the worker.
-
-            Used to reprogram the device based on current front panel values, if mismatched.
-            """
-        try:
-            yield (self.queue_work(self.primary_worker, 'check_remote_values', []))
-        except Exception as e:
-            logger.debug(f"Error by send work to worker(check_remote_values): \t {e}")
-
-
     def _create_button(self, text, on_click_callback):
         """Creates a styled QPushButton with consistent appearance and connects it to the given callback."""
         button = QPushButton(text)

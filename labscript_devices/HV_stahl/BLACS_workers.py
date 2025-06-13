@@ -64,29 +64,13 @@ class HV_Worker(Worker):
 
         return front_panel_values
 
-    def check_remote_values(self, kwargs): # reads the current settings of the device, updating the BLACS_tab widgets
-        """Compares actual voltages on the hardware to expected front panel values.
-           If any mismatch > 0.01V is found, reprogram the device and return False.
-           """
+    def check_remote_values(self):
         results = {}
-        mismatch_found = False
-
-        self.num_AO = len(self.front_panel_values)
         for i in range(1, self.num_AO + 1):
             ch_name = f'CH{i}'
             actual = self.high_voltage_source.voltage_query(i)
-            expected = self.front_panel_values[ch_name]
             results[ch_name] = actual
-
-            if abs(actual - expected) > 0.01:
-                print(f"WARNING: Mismatch on {ch_name}: expected {expected}, got {actual}")
-                mismatch_found = True
-
-        if mismatch_found:
-            # Optionally, confirm with the user before sending
-            self.send_to_HV(kwargs)
-            return False
-        return True
+        return results
 
     def transition_to_buffered(self, device_name, h5_file, initial_values, fresh): 
         """transitions the device to buffered shot mode, 
@@ -123,14 +107,14 @@ class HV_Worker(Worker):
 
     def _run_experiment_sequence(self, events):
         try:
-            self._wait_for_trigger()
-            if self._stop_event.is_set():
-                return
-
+            start_time = time.time()
             for t, voltages in events:
-                time.sleep(t)
+                now = time.time()
+                wait_time = t - (now - start_time)
+                if wait_time > 0:
+                    time.sleep(wait_time)
                 for conn_name, voltage in voltages.items():
-                    channel_num = _get_channel_num(conn_name)  # 'ao1' --> '01'
+                    channel_num = _get_channel_num(conn_name)
                     self.high_voltage_source.set_voltage(channel_num, voltage)
                     self.final_values[channel_num] = voltage
                     if self.verbose:
@@ -140,20 +124,6 @@ class HV_Worker(Worker):
         finally:
             self._finished_event.set()
             print(f"[Thread] finished all events !")
-
-    def _wait_for_trigger(self):
-        """Wait for external TTL trigger."""
-        print("Waiting for trigger...")
-        while not self._stop_event.is_set():
-            if self._check_trigger():
-                print("Trigger received! Start experiment sequence")
-                return
-            # time.sleep(0.01)
-        print("Stopped waiting for trigger.")
-
-    def _check_trigger(self):
-        #todo: check if TTL received
-        return True
 
     def abort_transition_to_buffered(self):
         return self.transition_to_manual()
@@ -257,5 +227,4 @@ class HV_Worker(Worker):
 
 
 # --------------------contants
-PINK = 'ff52fa'
 BLUE = '#66D9EF'

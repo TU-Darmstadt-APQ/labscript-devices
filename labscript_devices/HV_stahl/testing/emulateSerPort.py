@@ -41,7 +41,7 @@ class HV_Emulator:
             try:
                 command = self._read_command().decode().strip()
                 if self.verbose:
-                    print(f"Received: {command}")
+                    print(f"Received: {command}", flush=True)
                 if command == "IDN":
                     self._respond("HV341 220 8 b\r")
                 elif command.startswith("HV341 CH"):
@@ -62,7 +62,7 @@ class HV_Emulator:
     def _respond(self, message):
         os.write(self.master, message.encode())
         if self.verbose:
-            print(f"Responded: {message.strip()}")
+            print(f"Responded: {message.strip()}", flush=True)
 
 
 if __name__ == "__main__":
