@@ -75,4 +75,26 @@ To add a new device, the user should:
 - Create a corresponding .py file (by copying an existing model as a template)
 - Adjust the class and the model names in the .py file to match the new entry in the JSON file
 
-Note: The class name must exactly match the model name specified in capabilities.json.****
+Note: The class name must exactly match the model name specified in capabilities.json.
+
+---
+## Connection table
+
+```python
+from labscript import start, stop, add_time_marker, AnalogOut
+from labscript_devices.DummyPseudoclock.labscript_devices import DummyPseudoclock
+from labscript_devices.HV_stahl.models.HV_200_8 import HV_200_8
+from labscript_devices.HV_stahl.models.HV_250_8 import HV_250_8
+from labscript_devices.HV_stahl.models.HV_500_8 import HV_500_8
+
+DummyPseudoclock(name='pseudoclock')
+
+HV_200_8(name='high_voltage_source_0', parent_device=pseudoclock.clockline, port='/dev/pts/3', baud_rate=9600, num_AO=3)
+HV_250_8(name='high_voltage_source_1', parent_device=pseudoclock.clockline, port='/dev/pts/3', baud_rate=9600, num_AO=3)
+HV_500_8(name='high_voltage_source_2', parent_device=pseudoclock.clockline, port='/dev/pts/3', baud_rate=9600, num_AO=3)
+AnalogOut(name='ao_HV_4', parent_device=high_voltage_source_2 ,connection='ao0', default_value=5)
+AnalogOut(name='ao_HV_5', parent_device=high_voltage_source_2 ,connection='ao1')
+AnalogOut(name='ao_HV_6', parent_device=high_voltage_source_2 ,connection='ao2')
+
+
+```

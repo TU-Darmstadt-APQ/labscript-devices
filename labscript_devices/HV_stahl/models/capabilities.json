@@ -10,5 +10,11 @@
      "static_AO": 0,
     "num_AO": 8,
     "baud_rate": 9600
+  },
+  "HV_500_8": {
+    "AO_range": [-500,500],
+    "static_AO": 0,
+    "num_AO": 8,
+    "baud_rate": 9600
   }
 }
