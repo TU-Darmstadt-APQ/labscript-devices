@@ -37,12 +37,26 @@ class GPIBLANAdapterTab(DeviceTab):
         # --- Init
         self.init_slave_device()
 
+
     @define_state(MODE_MANUAL,True,True)
     def init_slave_device(self, widget=None ):
         device_name = yield(self.queue_work(self._primary_worker,'get_device_name'))
         address_gpib =  yield(self.queue_work(self._primary_worker,'get_address_gpib'))
         self.adap_widget.write_device_name(device_name)
         self.adap_widget.write_address_gpib(address_gpib)
+
+
+    @define_state(MODE_MANUAL,True,True)
+    def send_cmd(self,cmd= None, widget=None):
+        response = yield(self.queue_work(self._primary_worker,'send_cmd',cmd))
+        return response
+
+    def get_child_from_connection_table(self, parent_device_name, port):
+        return DeviceTab.get_child_from_connection_table(self, parent_device_name, port)
+
+
+
+
 
 
 class GPIBLANGUI(QWidget):

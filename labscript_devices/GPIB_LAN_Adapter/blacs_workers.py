@@ -5,7 +5,8 @@ from zprocess import rich_print
 from blacs.tab_base_classes import Worker
 from labscript_utils import properties
 
-
+def sep(val):
+    print(f"===== {val} ======]")
 
 class GPIBLANAdapterWorker(Worker):
     """
@@ -37,7 +38,7 @@ class GPIBLANAdapterWorker(Worker):
         # with h5py.File(self.h5file, 'r+') as f:
             # ----------------------------------------- Get device properties
             # self.triggered = properties.get(f, device_name, 'device_properties')["some_prop"]
-
+    
 
         rich_print(f"====== End transition to Buffered: ======", color='#66D9EF') 
         return {}
@@ -87,5 +88,17 @@ class GPIBLANAdapterWorker(Worker):
 
     def get_device_name(self):
         return "Dummy Device"
+    
+    def send_cmd(self, cmd):
+        print(cmd)
 
     
+
+
+
+# child
+# device_name
+# from_child
+# from_parent
+# to_child
+# to_parent

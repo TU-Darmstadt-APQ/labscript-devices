@@ -15,16 +15,12 @@ class GPIBSlaveDevice(Device):
                  # limits ,                                 
                  **kwargs):
         
-        self.name = name
-        self.connection = connection
+
+        Device.__init__(self,name,parent_device,connection, **kwargs)
 
 
-    def add_cmd_group(self,group):
-        """ Override this methode in subclass"""
-        pass
-    
-    def add_cmd(self,group, cmd):
-        """ Override this methode in subclass """
+    def cmd(self, cmd):
+        """ Command the device, Override this methode in subclass """
         pass 
 
 
@@ -37,44 +33,19 @@ class HP6632A(GPIBSlaveDevice):
             Current         :   0 - 5.1188 (125e-3) A
             Overvoltage     :   0 - 22V    (0.1) V
             
-            !!! programmable are 2.375 Higher
+            !!! programmable are 2.375% Higher
 
         Language        : ASCII 
         Numerics        : 1.23E3
         Terminators     :  ;   LF   CR LF
     
     '''
+    description = "HP6632A"
+
+    # @set_passed_properties(property_names={}) # TODO
     def __init__(self,*args,**kwargs):
-        super.__init__(*args,**kwargs)
+        Device.__init__(self,*args,**kwargs)
 
-        self.type_device = "HP6632A"
+    def cmd(self):
+        pass  # TODO
 
-
-
-
-# class PrologixGPIBEthernetDevice:
-#     def __init__(self, address, *args, **kwargs):
-#         self.address = address
-#         self.gpib = PrologixGPIBEthernet(*args, **kwargs)
-
-#     def connect(self):
-#         self.gpib.connect()
-#         self.gpib.select(self.address)
-
-#     def close(self):
-#         self.gpib.close()
-
-#     def write(self, *args):
-#         return self.gpib.write(*args)
-
-#     def read(self, *args):
-#         return self.gpib.read(*args)
-
-#     def query(self, *args):
-#         return self.gpib.query(*args)
-
-#     def idn(self):
-#         return self.query('*IDN?')
-
-#     def reset(self):
-#         self.write('*RST')
