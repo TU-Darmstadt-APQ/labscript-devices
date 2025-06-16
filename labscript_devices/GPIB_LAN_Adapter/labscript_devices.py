@@ -20,7 +20,7 @@ class GPIBLANAdapter(IntermediateDevice):
                  ip_address,
                  timeout = 2,
                  **kwargs):
-        
+          
         self.BLACS_connection = ip_address
         # --------------------------------- class attributes
         self.name = name
@@ -31,6 +31,8 @@ class GPIBLANAdapter(IntermediateDevice):
     def add_device(self,device):
         if not isinstance(device,GPIBSlaveDevice):
             raise LabscriptError("Parent must be an instance of GPIBLANAdapter")
+        
+        # Here : check device.connection ? 
         IntermediateDevice.add_device(self, device)
 
 

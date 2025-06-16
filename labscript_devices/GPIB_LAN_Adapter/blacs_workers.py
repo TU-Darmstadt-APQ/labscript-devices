@@ -5,8 +5,6 @@ from zprocess import rich_print
 from blacs.tab_base_classes import Worker
 from labscript_utils import properties
 
-def sep(val):
-    print(f"===== {val} ======]")
 
 class GPIBLANAdapterWorker(Worker):
     """
@@ -27,8 +25,7 @@ class GPIBLANAdapterWorker(Worker):
 
 
         # ----------------------------------------- Buffered/Manuel flags
-        
-
+    
     def transition_to_buffered( self, device_name, h5file , front_panel_values, refresh): 
         rich_print(f"====== Begin transition to Buffered: ======", color='#66D9EF')    
         
@@ -81,11 +78,10 @@ class GPIBLANAdapterWorker(Worker):
         rich_print(f"====== transition to manual: ======", color= '#AE81FF')
         return 
     
-    # -----
+    # ------------------------------------------
     def get_address_gpib(self):
         return str(self.adap.get_address_gpib()).strip()
     
-
     def get_device_name(self):
         return "Dummy Device"
     
@@ -93,12 +89,3 @@ class GPIBLANAdapterWorker(Worker):
         print(cmd)
 
     
-
-
-
-# child
-# device_name
-# from_child
-# from_parent
-# to_child
-# to_parent

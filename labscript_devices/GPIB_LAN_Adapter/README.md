@@ -1,5 +1,8 @@
 #  GPIB ETHERNET ADAPTER implementation
 
+# Stand (16.06.2025)
+Currently on hold, but we may revisit it after the implementation of the HP devices with the Kofortrinic adapter. This implementation will provide a more flexible approach for managing GPIB devices.
+
 ## TODO
 1.  Label the adapter , has fix ip adress now
 2.  Write communication methodedes between adapter and slave 

@@ -2,6 +2,9 @@
 <ui version="4.0">
  <class>main_form</class>
  <widget class="QWidget" name="main_form">
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -127,6 +130,12 @@
      <layout class="QHBoxLayout" name="horizontalLayout_2">
       <item>
        <widget class="QLabel" name="cmd_label">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <property name="font">
          <font>
           <pointsize>10</pointsize>
@@ -140,7 +149,27 @@
        </widget>
       </item>
       <item>
-       <widget class="QLineEdit" name="cmd_input"/>
+       <widget class="QLineEdit" name="cmd_input">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+          <horstretch>10</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="send_cmd_btn">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>send</string>
+        </property>
+       </widget>
       </item>
      </layout>
     </widget>
@@ -164,8 +193,11 @@
    </item>
    <item>
     <widget class="QTextEdit" name="response_output">
-     <property name="readOnly">
+     <property name="enabled">
       <bool>true</bool>
+     </property>
+     <property name="readOnly">
+      <bool>false</bool>
      </property>
     </widget>
    </item>
