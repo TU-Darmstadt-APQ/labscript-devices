@@ -19,6 +19,7 @@ from qtutils.qt.QtGui import QDoubleValidator
 
 # --- Worker Imports
 from labscript_devices.GPIBDevice import GPIBWorker
+from labscript_devices.GPIB_LAN_Device import GPIB_LAN_Worker
 
 
 # --- Specifications for HP6632B:
@@ -35,6 +36,22 @@ MIN_CURRENT = 0
 MAX_CURRENT = 5
 
 
+''' 
+    Uses HP BASIC programming language
+
+    Capabilities : 
+        Voltage         :   0 - 20.475 (5e-3) V
+        Current         :   0 - 5.1188 (125e-3) A
+        Overvoltage     :   0 - 22V    (0.1) V
+        
+        !!! programmable are 2.375% Higher
+
+    Language        : ASCII 
+    Numerics        : 1.23E3
+    Terminators     :  ;   LF   CR LF
+'''
+
+
 class HP_6632A(IntermediateDevice):
 
     '''
@@ -47,7 +64,7 @@ class HP_6632A(IntermediateDevice):
     def __init__(self, 
                  name, 
                  GPIB_address, 
-                 ip_adapter= None,
+                 ip_adapter= "None",
                  num_outputs=None,
                    **kwargs):
         IntermediateDevice.__init__(self, name, None, **kwargs)
@@ -84,7 +101,6 @@ class HP_6632A(IntermediateDevice):
                 msg = """Connection string %s does not match format 'out<N>/voltage' or 'out<N>/current' for integer N"""
                 raise ValueError(msg % str(device.connection))
 
-
         for i in range(2):
             i += 1
             if output_table['v'] < MIN_VOLTAGE or output_table['v'] > MAX_VOLTAGE:
@@ -99,7 +115,6 @@ class HP_6632A(IntermediateDevice):
         grp.create_dataset('OUTPUT_DATA', compression=config.compression, data=output_table)
 
 
-
 @BLACS_tab
 class HP_6632ATab(DeviceTab):
 
@@ -107,12 +122,12 @@ class HP_6632ATab(DeviceTab):
 
         connection_table = self.settings['connection_table']
         connection_table_properties = connection_table.find_by_name(self.device_name).properties
-        self.num_outputs = connection_table_properties["num_outputs"]
 
-        # layout = self.get_tab_layout()
+        self.num_outputs = connection_table_properties["num_outputs"]
+        self.ip_adapter = connection_table_properties["ip_adapter"]
+
 
         # Capabilities:
-
         self.base_units = {'v': 'V', 'c': 'A'}
         self.base_step = {'v': 0.1, 'c': 0.01}  # step size for +/- buttons
         self.base_decimals = {'v': voltage_decimals, 'c': current_decimals}  # display 2 decimals accuracy
@@ -152,24 +167,45 @@ class HP_6632ATab(DeviceTab):
         DeviceTab.transition_to_manual(self, notify_queue, program)
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address, 'num_outputs': self.num_outputs}
-        self.create_worker("main_worker", HP_6632AWorker, worker_initialisation_kwargs)
+        if self.ip_adapter != "None":
+            worker_initialisation_kwargs = {
+                'GPIB_address': self.GPIB_address, 
+                'num_outputs': self.num_outputs,
+                "ip_adapter" : self.ip_adapter,
+                }
+            self.create_worker("main_worker", HP_6632_AdapterWorker, worker_initialisation_kwargs)
+
+        else:
+            worker_initialisation_kwargs = {
+                'GPIB_address': self.GPIB_address, 
+                'num_outputs': self.num_outputs,
+                }
+            self.create_worker("main_worker", HP_6632AWorker, worker_initialisation_kwargs)
+
         self.primary_worker = "main_worker"
 
 
 
-class HP_6632AWorker(GPIBWorker):
+class HP_6632_AdapterWorker(GPIB_LAN_Worker): 
 
-    def init(self):
+    def check_remote_values(self):
+        for i in range(self.num_outputs):
+            self.check_channel_control(i + 1)
 
+    def program_manual(self, front_panel_values):
+        # Get values from the front_panel_settings
+        for i in range(self.num_outputs):
+            voltage = front_panel_values['out/voltage']
+            self.send_GPIB_voltage(voltage=voltage)
 
-        # ----------------------------------------- Initialize osci
-        global HP_6632A_Device
-        self.hp = HP_6632A_Device(
-            GPIB_address = self.address,
-            )
+        for i in range(self.num_outputs):
+            current = front_panel_values['out/current']
+            self.send_GPIB_current(current=current)
+        self.check_remote_values()
+        return {}
+    
 
-    def send_GPIB_voltage(self, voltage=None):
+    def send_GPIB_voltage(self,voltage):
         if voltage is not None:
             voltage = np.round(voltage, voltage_decimals) 
 
@@ -179,11 +215,88 @@ class HP_6632AWorker(GPIBWorker):
         if voltage is not None:
             sendStr = "VOLT "
             sendStr += str(voltage)
+            self.write(sendStr)
+
+    def send_GPIB_current(self,current):
+        if current is not None:
+            current = np.round(current, current_decimals) 
+
+            if current < MIN_CURRENT or current > MAX_CURRENT:
+                raise Exception("Current {:f} is out of range {:f} to {:f}. Is the Current in A?".format(current, MIN_CURRENT, MAX_CURRENT))
+
+        if current is not None:
+            sendStr = "CURR "
+            sendStr += str(current)
+            self.write(sendStr)
+
+
+    # TODO: check for remote values and warn if control_mode is changing
+    def check_channel_control(self, channel):
+        return
+        # out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?')), voltage_decimals)
+        # out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?')), current_decimals)
+
+        # print('Output voltage is {}; ou
+
+
+    def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
+        # for remote worker to find correct find path:
+        if getattr(self, 'is_remote', False):
+            h5_filepath = path_to_local(h5_filepath)
+
+        # Get values at first from 'initial_values' and overwrite them afterwards with values given in the experiment script
+        dtypes = [('v', np.float32)] + \
+                 [('c', np.float32)]
+        # print('dtypes',dtypes)
+        output_table = np.zeros(1, dtype=dtypes)
+        for i in range(self.num_outputs):
+            output_table['v'] = initial_values['out/voltage']
+            output_table['c'] = initial_values['out/current']
+
+        # Get values from experiment script
+        with h5py.File(h5_filepath, 'r') as hdf5_file:
+            group = hdf5_file['devices'][device_name]
+            output_table = group['OUTPUT_DATA'][0]
+
+        # Send Values via GPIB:
+        final_values = {}
+        for i in range(self.num_outputs):
+            self.send_GPIB_voltage(voltage=output_table['v'])
+            final_values['out/voltage'] = output_table['v']
+            self.send_GPIB_current(current=output_table['c'])
+            final_values['out/current'] = output_table['c']
+        # Return final values to use them when transitioning to manual:
+        self.final_values = final_values
+        return self.final_values
+    
+
+
+
+class HP_6632AWorker(GPIBWorker):
+
+    ''' Copied from HP_6632BWorker (Not Tested) '''
+    # TODO: Check that if no voltage is specified, nothing is sent.
+    # TODO: Include programming accuracies
+    def send_GPIB_voltage(self, voltage=None):
+        # Update the power supply outputs with the specified voltages.
+        # If an argument is None, the corresponding value will not be changed
+        if voltage is not None:
+            voltage = np.round(voltage, voltage_decimals)  # round voltage to four decimal places!
+
+            if voltage < MIN_VOLTAGE or voltage > MAX_VOLTAGE:
+                raise Exception("Voltage {:f} is out of range {:f} to {:f}. Is the voltage in V?".format(voltage, MIN_VOLTAGE, MAX_VOLTAGE))
+
+        if voltage is not None:
+            sendStr = "VOLT "
+            sendStr += str(voltage)
             self.GPIB_connection.write(sendStr)
+            # print('send', sendStr)
 
     def send_GPIB_current(self, current=None):
+        # Update the power supply  current outputs with the specified currents.
+        # If an argument is None, the corresponding value will not be changed
         if current is not None:
-            current = np.round(current, current_decimals)  
+            current = np.round(current, current_decimals)  # round current to three decimal places!
 
             if current < MIN_CURRENT or current > MAX_CURRENT:
                 raise Exception("Current {:f} is out of range {:f} to {:f}. Is the Current in A?".format(current, MIN_CURRENT, MAX_CURRENT))
@@ -192,66 +305,73 @@ class HP_6632AWorker(GPIBWorker):
             sendStr = "CURR "
             sendStr += str(current)
             self.GPIB_connection.write(sendStr)
+            # print('send', sendStr)
 
-
+    # TODO: check for remote values and warn if control_mode is changing
     def check_channel_control(self, channel):
         return
+        # out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?')), voltage_decimals)
+        # out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?')), current_decimals)
+
+        # print('Output voltage is {}; output current is {}'.format(out_value_voltage, out_value_current))
 
     def check_remote_values(self):
-        pass
-        # for i in range(self.num_outputs):
-        #     self.check_channel_control(i + 1)
+        for i in range(self.num_outputs):
+            self.check_channel_control(i + 1)
 
     def program_manual(self, front_panel_values):
-        # for i in range(self.num_outputs):
-        #     voltage = front_panel_values['out/voltage']
-        #     self.send_GPIB_voltage(voltage=voltage)
+        # Get values from the front_panel_settings
+        for i in range(self.num_outputs):
+            voltage = front_panel_values['out/voltage']
+            self.send_GPIB_voltage(voltage=voltage)
 
-        # for i in range(self.num_outputs):
-        #     current = front_panel_values['out/current']
-        #     self.send_GPIB_current(current=current)
-        # self.check_remote_values()
-        return {}
-    
+        for i in range(self.num_outputs):
+            current = front_panel_values['out/current']
+            self.send_GPIB_current(current=current)
+        self.check_remote_values()
+        return {}  # no need to adjust the values. Can add a check_remote_values() here to read current values from power supply
+
     def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
-        # if getattr(self, 'is_remote', False):
-        #     h5_filepath = path_to_local(h5_filepath)
+        # for remote worker to find correct find path:
+        if getattr(self, 'is_remote', False):
+            h5_filepath = path_to_local(h5_filepath)
 
-        # dtypes = [('v', np.float32)] + \
-        #          [('c', np.float32)]
-        
-        # output_table = np.zeros(1, dtype=dtypes)
-        # for i in range(self.num_outputs):
-        #     output_table['v'] = initial_values['out/voltage']
-        #     output_table['c'] = initial_values['out/current']
+        # Get values at first from 'initial_values' and overwrite them afterwards with values given in the experiment script
+        dtypes = [('v', np.float32)] + \
+                 [('c', np.float32)]
+        # print('dtypes',dtypes)
+        output_table = np.zeros(1, dtype=dtypes)
+        for i in range(self.num_outputs):
+            output_table['v'] = initial_values['out/voltage']
+            output_table['c'] = initial_values['out/current']
 
-        # with h5py.File(h5_filepath, 'r') as hdf5_file:
-        #     group = hdf5_file['devices'][device_name]
-        #     output_table = group['OUTPUT_DATA'][0]
+        # Get values from experiment script
+        with h5py.File(h5_filepath, 'r') as hdf5_file:
+            group = hdf5_file['devices'][device_name]
+            output_table = group['OUTPUT_DATA'][0]
 
-        # final_values = {}
-        # for i in range(self.num_outputs):
-        #     self.send_GPIB_voltage(voltage=output_table['v'])
-        #     final_values['out/voltage'] = output_table['v']
-        #     self.send_GPIB_current(current=output_table['c'])
-        #     final_values['out/current'] = output_table['c']
-        # self.final_values = final_values
-        # return self.final_values
-        return {}
+        # Send Values via GPIB:
+        final_values = {}
+        for i in range(self.num_outputs):
+            self.send_GPIB_voltage(voltage=output_table['v'])
+            final_values['out/voltage'] = output_table['v']
+            self.send_GPIB_current(current=output_table['c'])
+            final_values['out/current'] = output_table['c']
+        # Return final values to use them when transitioning to manual:
+        self.final_values = final_values
+        return self.final_values
 
     def transition_to_manual(self, abort=False):
-        # values = self.final_values
-        # voltage_table = np.empty(self.num_outputs)
-        # current_table = np.empty(self.num_outputs)
-        # voltage_table[0] = values['out/voltage']
-        # current_table[0] = values['out/current']
+        # Set all channels to their final values:
+        values = self.final_values
 
-        # self.send_GPIB_voltage(voltage=voltage_table[0])
-        # self.send_GPIB_current(current=current_table[0])
+        voltage_table = np.empty(self.num_outputs)
+        current_table = np.empty(self.num_outputs)
+        voltage_table[0] = values['out/voltage']
+        current_table[0] = values['out/current']
+
+        self.send_GPIB_voltage(voltage=voltage_table[0])
+        self.send_GPIB_current(current=current_table[0])
+
+        # return True to indicate we successfully transitioned back to manual mode
         return True
-
-
-class HP_6632A_Device:
-    def __init__(self,GPIB_address):
-        self.GPIB_address = GPIB_address
-        print(self.GPIB_address)
