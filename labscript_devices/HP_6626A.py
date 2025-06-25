@@ -10,8 +10,12 @@ import h5py
 from blacs.tab_base_classes import define_state
 from blacs.tab_base_classes import MODE_MANUAL, MODE_TRANSITION_TO_BUFFERED, MODE_TRANSITION_TO_MANUAL, MODE_BUFFERED
 from blacs.device_base_class import DeviceTab
+
 from PyQt5.QtWidgets import QLabel,QWidget,QHBoxLayout
 from PyQt5.QtCore import Qt
+# from qtutils import UiLoader
+# from qtutils.qt.QtCore import *
+# from qtutils.qt.QtGui import QDoubleValidator
 
 # --- Worker Imports
 from labscript_devices.GPIBDevice import GPIBWorker
@@ -20,48 +24,57 @@ from labscript_devices.GPIBDevice import GPIBWorker
 from .logger_config import logger
 
 
+
 # TODO To investigate It seems that quering the readback values ist happening before setting value
      # which is weid because the order in the code should be otherwise
      # Therfore the readback is currently showing the last set output value
-# TODO tom implement default values
+
 ##############################################################################################################
 #                                               Device Limits                                                #
 ##############################################################################################################
 
-# --- Specifications for HP6622A:
-max_no_of_outputs : int  = 2
-Watt_ratings : list[int] = [80, 80]
-voltage_decimals : int   = 2
-current_decimals : int   = 3
+# Specifications for HP6626A:
+max_no_of_outputs : int = 4
+Watt_ratings : list[int] = [25, 25, 50, 50]
+voltage_decimals :int = 2
+current_decimals :int = 3
 
-# --- DC Output Range Specifications
-LOW_RANGE : bool = False
+# DC Output Range Specifications
+LOW_RANGE :bool = False
 MIN_VOLTAGE = 0
-MAX_VOLTAGE = 20
+MAX_VOLTAGE = 16
 MIN_CURRENT = 0
-MAX_CURRENT = 4
+MAX_CURRENT = 1
 
-MIN_VOLTAGE_80W_LOW_RANGE = 0  # in V; Outputs 1 and 2
-MAX_VOLTAGE_80W_LOW_RANGE = 20  # in V; Outputs 1 and 2
+MIN_VOLTAGE_25W_LOW_RANGE = 0  # in V; Outputs 1 and 2
+MAX_VOLTAGE_25W_LOW_RANGE = 7  # in V; Outputs 1 and 2
+MIN_VOLTAGE_50W_LOW_RANGE = 0  # in V; Outputs 3 and 4
+MAX_VOLTAGE_50W_LOW_RANGE = 16  # in V; Outputs 3 and 4
 
-MIN_CURRENT_80W_LOW_RANGE = 0  # in A; Outputs 1 and 2
-MAX_CURRENT_80W_LOW_RANGE = 4  # in A; Outputs 1 and 2
+MIN_CURRENT_25W_LOW_RANGE = 0  # in A; Outputs 1 and 2
+MAX_CURRENT_25W_LOW_RANGE = 0.015  # in A; Outputs 1 and 2
+MIN_CURRENT_50W_LOW_RANGE = 0  # in A; Outputs 3 and 4
+MAX_CURRENT_50W_LOW_RANGE = 0.2  # in A; Outputs 3 and 4
 
 
-MIN_VOLTAGE_80W_HIGH_RANGE = 0  # in V; Outputs 1 and 2
-MAX_VOLTAGE_80W_HIGH_RANGE = 50  # in V; Outputs 1 and 2
+MIN_VOLTAGE_25W_HIGH_RANGE = 0  # in V; Outputs 1 and 2
+MAX_VOLTAGE_25W_HIGH_RANGE = 50  # in V; Outputs 1 and 2
+MIN_VOLTAGE_50W_HIGH_RANGE = 0  # in V; Outputs 3 and 4
+MAX_VOLTAGE_50W_HIGH_RANGE = 16  # in V; Outputs 3 and 4
 
-MIN_CURRENT_80W_HIGH_RANGE = 0  # in A; Outputs 1 and 2
-MAX_CURRENT_80W_HIGH_RANGE = 2  # in A; Outputs 1 and 2
+MIN_CURRENT_25W_HIGH_RANGE = 0  # in A; Outputs 1 and 2
+MAX_CURRENT_25W_HIGH_RANGE = 0.5  # in A; Outputs 1 and 2
+MIN_CURRENT_50W_HIGH_RANGE = 0  # in A; Outputs 3 and 4
+MAX_CURRENT_50W_HIGH_RANGE = 2  # in A; Outputs 3 and 4
 
 
 ##############################################################################################################
 #                                               DEVICE                                                       #
 ##############################################################################################################
 
-class HP_6622A(IntermediateDevice):
+class HP_6626A(IntermediateDevice):
     '''
-        This Devices allows 4 "StaticAnalogQuantity"s to be set: Voltage and Current for each of the two outputs.
+        This Devices allows 8 "StaticAnalogQuantity"s to be set: Voltage and Current for each of the four outputs.
         Each Quantity is named by its connections similar to the NI_DAQmx principle using: outX/voltage or outX/current
         for voltage and current values of the outputs.
 
@@ -79,20 +92,20 @@ class HP_6622A(IntermediateDevice):
         NEW : Depending on the format of the passed GPIB_address : the device will try to connect through:
         -  a socket assuming a KOFOTRONIC adapter (Prologix alike) if GPIB_address = "ADAP::adapter_ip_address::GPIB_address"
         -  pyvisa assuming a normal GPIB connection if fromat GPIB_address =  "GPIB<number>::GPIB_address" 
-
     '''
 
     allowed_children = [StaticAnalogQuantity]
-    description = 'HP 6622A DC Power Supply'
+
+    description = 'HP 6626A DC Power Supply'
 
     @set_passed_properties(property_names={"connection_table_properties": ["num_outputs"]})
     def __init__(self, name, GPIB_address, num_outputs=None, **kwargs):
+        # Following Phil's thesis, IntermediateDevice should be subclassed here:
         IntermediateDevice.__init__(self, name, None, **kwargs)
 
         self.instructions = {}
-        self.BLACS_connection = GPIB_address
 
-        # Check the number of outputs
+        self.BLACS_connection = GPIB_address
         if isinstance(num_outputs, int):
             if num_outputs <= max_no_of_outputs:
                 self.num_outputs = num_outputs
@@ -102,45 +115,45 @@ class HP_6622A(IntermediateDevice):
             raise Exception('Please specify the number of used outputs in the connection table')
         else:
             raise TypeError()
-        
-    def _check_output(self, device, output_type):
-        val = float(device.static_value)
-        if output_type == "voltage":
-            if val < MIN_VOLTAGE_80W_HIGH_RANGE or val > MAX_VOLTAGE_80W_HIGH_RANGE:
-                return False
-            return True
-        elif output_type == "current":
-            if val < MIN_CURRENT_80W_HIGH_RANGE or val > MAX_CURRENT_80W_HIGH_RANGE:
-                return False
-            return True
-        else:
-            raise LabscriptError(f" output type {output_type} is not supported. Only 'voltage' and 'current.")
+
 
     def generate_code(self, hdf5_file):
         IntermediateDevice.generate_code(self, hdf5_file)
 
-        # Initialise output table as structered numpy array with fields named 'vi' and 'ci', where 1 ≤ i ≤ num_outputs.
-        # output_voltage, output_current = {}, {}
-        dtypes = [('v%d' % (i + 1), np.float32) for i in range(self.num_outputs)] + \
-                 [('c%d' % (i + 1), np.float32) for i in range(self.num_outputs)]
-
-        # Check connected child devices and create the output table and the analogs dictionary
+        dtypes = [('v%d' % (i + 1), np.float32) for i in range(4)] + \
+                 [('c%d' % (i + 1), np.float32) for i in range(4)]
         output_table = np.zeros(1, dtype=dtypes)
-        analogs = {}
+
+        # iterate through the connected child devices
+        # Child devices are the StaticAnalogQuantities connected
+
         for device in self.child_devices:
             try:
-                if isinstance(device, StaticAnalogQuantity):
-                    analogs[device.connection] = device
-                else: raise TypeError(device)
-
                 channel_no, output_type = device.connection.replace('out', '').split('/')
-                if not self._check_output( device , output_type):
-                    raise LabscriptError(f"The {output_type} specified for {device.connection} is not within the power supply's {output_type} range")
-
                 output_table['%s%d' % (output_type[0], int(channel_no))] = device.static_value
-
             except (ValueError, IndexError):
-                raise ValueError(f"Connection string {device.connection} does not match format 'out<N>/voltage' or 'out<N>/current' for integer N. The Error is {e}")
+                msg = """Connection string %s does not match format 'out<N>/voltage' or 'out<N>/current' for integer N"""
+                raise ValueError(msg % str(device.connection))
+
+        # Check for device-specific limits
+        for i in range(2):
+            i += 1
+            if output_table['v%d' % i] < MIN_VOLTAGE_25W_HIGH_RANGE or output_table['v%d' % i] > MAX_VOLTAGE_25W_HIGH_RANGE:
+                raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
+        for i in range(2):
+            i += 1
+            if output_table['c%d' % i] < MIN_CURRENT_25W_HIGH_RANGE or output_table['c%d' % i] > MAX_CURRENT_25W_HIGH_RANGE:
+                raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
+        for i in range(2, 4):
+            i += 1
+            if output_table['v%d' % i] < MIN_VOLTAGE_50W_HIGH_RANGE or output_table['v%d' % i] > MAX_VOLTAGE_50W_HIGH_RANGE:
+                raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
+        for i in range(2, 4):
+            i += 1
+            if output_table['c%d' % i] < MIN_CURRENT_50W_HIGH_RANGE or output_table['c%d' % i] > MAX_CURRENT_50W_HIGH_RANGE:
+                raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
+
+        # print('output_table',output_table)
 
         # Create device group in the HDF5 file:
         grp = self.init_device_group(hdf5_file)
@@ -150,12 +163,13 @@ class HP_6622A(IntermediateDevice):
 
 
 
+
 ##############################################################################################################
 #                                                TAB                                                         #
 ##############################################################################################################
 
 @BLACS_tab
-class HP_6622ATab(DeviceTab):
+class HP_6626ATab(DeviceTab):
 
     def initialise_GUI(self):
         # --- This allows to register a function to be called every periode of time t (ms)
@@ -165,27 +179,40 @@ class HP_6622ATab(DeviceTab):
 
         # --- Connection table properties
         connection_table = self.settings['connection_table']
-        connection_table_properties = connection_table.find_by_name(self.device_name).properties
-        self.num_outputs = int(connection_table_properties['num_outputs'])
         connection_table_entry = self.settings['connection_table'].find_by_name(self.settings['device_name'])
+        connection_table_properties = connection_table.find_by_name(self.device_name).properties
+        self.num_outputs = 4
         self.GPIB_address = connection_table_entry.BLACS_connection
 
         # --- Capabilities:
         self.base_units = {'v': 'V', 'c': 'A'}
         self.base_step = {'v': 0.1, 'c': 0.01}  # step size for +/- buttons
-        self.base_decimals = {'v': voltage_decimals, 'c': current_decimals}  # display accuracy
+        self.base_decimals = {'v': voltage_decimals, 'c': current_decimals}  # display 2 decimals accuracy
 
         analog_properties = {}
-        for i in range(self.num_outputs):
+        for i in range(2):
             analog_properties['out%d/voltage' % (i + 1)] = {'base_unit': self.base_units['v'],
-                                                            'min': MIN_VOLTAGE_80W_HIGH_RANGE,
-                                                            'max': MAX_VOLTAGE_80W_HIGH_RANGE,
+                                                            'min': MIN_VOLTAGE_25W_HIGH_RANGE,
+                                                            'max': MAX_VOLTAGE_25W_HIGH_RANGE,
                                                             'step': self.base_step['v'],
                                                             'decimals': self.base_decimals['v']
                                                             }
             analog_properties['out%d/current' % (i + 1)] = {'base_unit': self.base_units['c'],
-                                                            'min': MIN_CURRENT_80W_HIGH_RANGE,
-                                                            'max': MAX_CURRENT_80W_HIGH_RANGE,
+                                                            'min': MIN_CURRENT_25W_HIGH_RANGE,
+                                                            'max': MAX_CURRENT_25W_HIGH_RANGE,
+                                                            'step': self.base_step['c'],
+                                                            'decimals': self.base_decimals['c']
+                                                            }
+        for i in range(2, 4):
+            analog_properties['out%d/voltage' % (i + 1)] = {'base_unit': self.base_units['v'],
+                                                            'min': MIN_VOLTAGE_50W_HIGH_RANGE,
+                                                            'max': MAX_VOLTAGE_50W_HIGH_RANGE,
+                                                            'step': self.base_step['v'],
+                                                            'decimals': self.base_decimals['v']
+                                                            }
+            analog_properties['out%d/current' % (i + 1)] = {'base_unit': self.base_units['c'],
+                                                            'min': MIN_CURRENT_50W_HIGH_RANGE,
+                                                            'max': MAX_CURRENT_50W_HIGH_RANGE,
                                                             'step': self.base_step['c'],
                                                             'decimals': self.base_decimals['c']
                                                             }
@@ -216,6 +243,8 @@ class HP_6622ATab(DeviceTab):
             self.status_labels_dict[i] = self.status_label
             layout.addWidget(self.status_label,alignment=Qt.AlignmentFlag.AlignTop)
 
+
+
         # --- Another thing that can be done, but not adequate here
         # self.supports_remote_value_check(True) # This one checks the precise values and asks the user which one to choose
 
@@ -234,6 +263,7 @@ class HP_6622ATab(DeviceTab):
             mode = yield (self.queue_work(self.primary_worker, "check_status",chan))
             status_label.setText(f"Mode channel {chan} : {mode}")
 
+
     @define_state(MODE_MANUAL, True)
     def transition_to_buffered(self, h5_filepath, notify_queue):
         # for remote worker to find correct find path:
@@ -247,7 +277,7 @@ class HP_6622ATab(DeviceTab):
 
     def initialise_workers(self):
         worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address, 'num_outputs': self.num_outputs}
-        self.create_worker("main_worker", HP_6622AWorker, worker_initialisation_kwargs)
+        self.create_worker("main_worker", HP_6626AWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
 
@@ -255,7 +285,7 @@ class HP_6622ATab(DeviceTab):
 #                                                WORKER                                                      #
 ##############################################################################################################
 
-class HP_6622AWorker(GPIBWorker):
+class HP_6626AWorker(GPIBWorker):
 
     # -------------------------- Instrument specific methodes
     def set_v(self,chan,voltage):
@@ -301,16 +331,16 @@ class HP_6622AWorker(GPIBWorker):
         # Update the power supply outputs with the specified voltages.
         # If an argument is None, the corresponding value will not be changed
         if voltage is not None:
-            voltage = np.round(voltage, voltage_decimals) 
+            voltage = np.round(voltage, voltage_decimals)  # round voltage to four decimal places!
 
-            if voltage < MIN_VOLTAGE  or voltage > MAX_VOLTAGE:
+            if voltage < MIN_VOLTAGE or voltage > MAX_VOLTAGE:
                 raise Exception("Voltage {:f} is out of range {:f} to {:f}. Is the voltage in V?".format(voltage, MIN_VOLTAGE, MAX_VOLTAGE))
 
         if voltage is not None and output is not None:
             self.set_v(output,voltage)
 
     def send_GPIB_current(self, current=None, output=None):
-        # Update the power supply current outputs with the specified currents.
+        # Update the power supply  current outputs with the specified currents.
         # If an argument is None, the corresponding value will not be changed
         if current is not None:
             current = np.round(current, current_decimals)  # round current to three decimal places!
@@ -352,7 +382,7 @@ class HP_6622AWorker(GPIBWorker):
             current = front_panel_values['out' + str(i + 1) + '/current']
             self.send_GPIB_current(current=current, output=i + 1)
 
-        return {}
+        return {}  
 
     def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
         # for remote worker to find correct find path:
@@ -362,7 +392,7 @@ class HP_6622AWorker(GPIBWorker):
         # Get values at first from 'initial_values' and overwrite them afterwards with values given in the experiment script
         dtypes = [('v%d' % (i + 1), np.float32) for i in range(4)] + \
                  [('c%d' % (i + 1), np.float32) for i in range(4)]
-        
+        # print('dtypes',dtypes)
         output_table = np.zeros(1, dtype=dtypes)
         for i in range(self.num_outputs):
             output_table['v%d' % (i + 1)] = initial_values['out' + str(i + 1) + '/voltage']
@@ -385,6 +415,7 @@ class HP_6622AWorker(GPIBWorker):
         return self.final_values
 
     def transition_to_manual(self, abort=False):
+        # Set all channels to their final values:
         values = self.final_values
 
         voltage_table = np.empty(self.num_outputs)
@@ -399,17 +430,13 @@ class HP_6622AWorker(GPIBWorker):
         for i in range(len(current_table)):
             self.send_GPIB_current(current=current_table[i], output=i + 1)
 
+        # return True to indicate we successfully transitioned back to manual mode
         return True
 
 
-##############################################################################################################
-#                                                RunViewer                                                   #
-##############################################################################################################
-
 @runviewer_parser
-class HP_6622AParser(object):
+class HP_6626AParser(object):
     pass
-
 # class RunviewerClass(object):
 
     # def __init__(self, path, device):
@@ -443,15 +470,3 @@ class HP_6622AParser(object):
     #             add_trace(channel_name, traces[channel.parent_port], self.name, channel.parent_port)
 
     #     return triggers
-
-
-
-
-
-
-
-
-
-
-
-
