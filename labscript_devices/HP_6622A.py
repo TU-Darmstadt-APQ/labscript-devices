@@ -19,6 +19,11 @@ from labscript_devices.GPIBDevice import GPIBWorker
 # --- Others
 from .logger_config import logger
 
+
+# TODO To investigate It seems that quering the readback values ist happening before setting value
+     # which is weid because the order in the code should be otherwise
+     # Therfore the readback is currently showing the last set output value
+
 ##############################################################################################################
 #                                               Device Limits                                                #
 ##############################################################################################################
@@ -158,7 +163,7 @@ class HP_6622ATab(DeviceTab):
         time_check_state = time_check_state * 1e3 # conversion to ms
         self.statemachine_timeout_add(time_check_state ,self.status_monitor)
 
-        # --- Pull the following information out of the connection table:
+        # --- Connection table properties
         connection_table = self.settings['connection_table']
         connection_table_properties = connection_table.find_by_name(self.device_name).properties
         self.num_outputs = int(connection_table_properties['num_outputs'])
@@ -190,15 +195,13 @@ class HP_6622ATab(DeviceTab):
         self.create_analog_outputs(analog_properties)
         _, ao_widgets, _ = self.auto_create_widgets()
 
-        # --- Add The readback blacs widgets
-        val = 1
+        # --- Readback widgets
+        int_val = 0
         self.readback_widgets = {}
         for key,widget in ao_widgets.items():
             widget_layout = widget.layout()     # which is a GridLayout Btw
-            readback_widget = QWidget()
-            readback_layout = QHBoxLayout()
-            readback_layout.addWidget(QLabel(f"Readback: {val}"))
-            readback_widget.setLayout(readback_layout)
+            readback_widget = QLabel(f"Readback: {int_val}")
+            self.readback_widgets[key] = readback_widget
             widget_layout.addWidget(readback_widget,2,0,alignment=Qt.AlignmentFlag.AlignTop)   # row # column
 
         self.auto_place_widgets(ao_widgets)
@@ -218,9 +221,11 @@ class HP_6622ATab(DeviceTab):
 
     @define_state(MODE_MANUAL,True,delete_stale_states=True)
     def program_device(self):
-        super().program_device()    # To don't disturb the basic functionalities
-        current_output_values = yield(self.queue_work(self.primary_worker,'get_readbcks'))
+        super().program_device()    # to don't disturb the basic functionalities
+        current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
         logger.info(current_output_values)
+        for key, value in current_output_values.items():
+            self.readback_widgets[key].setText(f"Readback: {value}")
 
     @define_state(MODE_MANUAL, True)
     def status_monitor(self):
@@ -228,7 +233,6 @@ class HP_6622ATab(DeviceTab):
             status_label = self.status_labels_dict[chan] 
             mode = yield (self.queue_work(self.primary_worker, "check_status",chan))
             status_label.setText(f"Mode channel {chan} : {mode}")
-
 
     @define_state(MODE_MANUAL, True)
     def transition_to_buffered(self, h5_filepath, notify_queue):
@@ -245,7 +249,6 @@ class HP_6622ATab(DeviceTab):
         worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address, 'num_outputs': self.num_outputs}
         self.create_worker("main_worker", HP_6622AWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
-
 
 
 ##############################################################################################################
@@ -287,21 +290,20 @@ class HP_6622AWorker(GPIBWorker):
         
     def get_mode(self,chan):
         try:
-            sendStr = f"ASTS? {chan}"
+            sendStr = f"STS? {chan}"
             result = self.GPIB_connection.query(sendStr)
             return int(result)
         except Exception as e:
             raise LabscriptError(f"Failed getting mode: {e}")
-    # -------------------------- Worker methodes
-    # TODO: UI REadback value 
-
+        
+    # -------------------------- Worker/Instrument methodes
     def send_GPIB_voltage(self, voltage=None, output=None):
         # Update the power supply outputs with the specified voltages.
         # If an argument is None, the corresponding value will not be changed
         if voltage is not None:
             voltage = np.round(voltage, voltage_decimals) 
 
-            if voltage < MIN_VOLTAGE or voltage > MAX_VOLTAGE:
+            if voltage < MIN_VOLTAGE  or voltage > MAX_VOLTAGE:
                 raise Exception("Voltage {:f} is out of range {:f} to {:f}. Is the voltage in V?".format(voltage, MIN_VOLTAGE, MAX_VOLTAGE))
 
         if voltage is not None and output is not None:
@@ -319,27 +321,11 @@ class HP_6622AWorker(GPIBWorker):
         if current is not None and output is not None:
             self.set_i(output,current)
 
-
-    # TODO cc or cv ? 
-    # TODO live time refreshing (Future)
-    # def check_channel_control(self, channel): # Not used now
-    #     set_value_voltage = np.round(float(self.GPIB_connection.query('VSET?' + str(channel))), voltage_decimals)
-    #     set_value_current = np.round(float(self.GPIB_connection.query('ISET?' + str(channel))), current_decimals)
-    #     out_value_voltage = np.round(float(self.GPIB_connection.query('VOUT?' + str(channel))), voltage_decimals)
-    #     out_value_current = np.round(float(self.GPIB_connection.query('IOUT?' + str(channel))), current_decimals)
-
-    #     if out_value_current >= set_value_current:
-    #         print('Channel %d is in Current Control mode, Out: %.4f, Set: %.4f' % (channel, out_value_current, set_value_current))
-    #     elif out_value_voltage >= set_value_voltage:
-    #         print("Channel %d is in Voltage Control mode, Out: %.4f, Set: %.4f" % (channel, out_value_voltage, set_value_voltage))
-    #     else:
-    #         print('Output Control Mode is unclear.', out_value_current, set_value_current, out_value_voltage, set_value_voltage)
-    #     return 
-
+    # -------------------------- Worker/Tab methodes
     def check_status(self,chan):
         mode = self.get_mode(chan)
         
-        meanings = ['CP', 'OC', 'UNR', 'OT', 'OV', '-CC', '+CC', 'CV']  # Page 74 OPERATING MANUAL 6622A
+        meanings = ['CV', '+CC', '-CC', 'OV', 'OT', 'UNR', 'OC', 'CP']  # Page 74 OPERATING MANUAL 6622A
         status = []
 
         for i in range(8):
@@ -348,21 +334,19 @@ class HP_6622AWorker(GPIBWorker):
                 status.append(meanings[i])
         return ' '.join(status)
 
-    def get_readbcks(self):
+    def get_readbacks(self):
         current_output_values = {}
         for i in range(1, self.num_outputs + 1 ):
             current_output_values[f'out{i}/voltage'] = np.round(float(self.get_v( i)) , voltage_decimals)
             current_output_values[f'out{i}/current'] = np.round(float(self.get_i( i)), current_decimals)
-            print(current_output_values) 
         return current_output_values
 
+    # -------------------------- The usuals
     def program_manual(self, front_panel_values):
-
         # Get values from the front_panel_settings
         for i in range(self.num_outputs):
             voltage = front_panel_values['out' + str(i + 1) + '/voltage']
             self.send_GPIB_voltage(voltage=voltage, output=i + 1)
-
 
         for i in range(self.num_outputs):
             current = front_panel_values['out' + str(i + 1) + '/current']
