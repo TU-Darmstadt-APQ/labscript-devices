@@ -162,6 +162,7 @@ class AndorGridJumperWorker(Worker):
 
     def get_grid(self, t):
 
+        return np.zeros((41,41))
         try:
             grid = zprocess.zmq_get(self.port, self.host, f'get_grid {t}', 1.5)
             return grid
