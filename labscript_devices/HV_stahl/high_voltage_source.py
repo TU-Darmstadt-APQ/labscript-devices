@@ -16,7 +16,7 @@ class HighVoltageSource:
         self.baud_rate = baud_rate
 
         # connecting to connectionice
-        self.connection = serial.Serial(self.port, self.baud_rate, timeout=0.04)
+        self.connection = serial.Serial(self.port, self.baud_rate, timeout=1)
         device_info = self.identify_query()
         self.device_serial = device_info[0]  # For example, 'HV023'
         self.device_voltage_range = device_info[1]  # For example, '50'
@@ -36,7 +36,7 @@ class HighVoltageSource:
                LabscriptError: If identity format is incorrect.
            """
         self.connection.write("IDN\r".encode())
-        raw_response = self.connection.readline().decode()
+        raw_response = self.connection.read_until(b'\r').decode()
         identity = raw_response.split()
 
         if len(identity) == 4:
@@ -65,7 +65,7 @@ class HighVoltageSource:
             send_str = f"{self.device_serial} {channel} {scaled_voltage:.6f}\r"
 
             self.connection.write(send_str.encode())
-            response = self.connection.readline().decode().strip() #'CHXX Y.YYYYY'
+            response = self.connection.read_until(b'\r').decode().strip() #'CHXX Y.YYYYY'
 
             logger.debug(f"Sent to HV: {send_str.strip()} | Received: {response!r}")
 
@@ -92,7 +92,7 @@ class HighVoltageSource:
         send_str = f"{self.device_serial} TEMP\r"
         self.connection.write(send_str.encode())
 
-        response = self.connection.readline().decode().strip() #'TEMP XXX.X°C'
+        response = self.connection.read_until(b'\r').decode().strip() #'TEMP XXX.X°C'
 
         if response.endswith("°C"):
             try:
@@ -124,7 +124,7 @@ class HighVoltageSource:
         send_str = f"{self.device_serial} Q{channel}\r" # 'DDDDD QXX'
         self.connection.write(send_str.encode())
 
-        response = self.connection.readline().decode().strip()  # '+/-yy,yyy V'
+        response = self.connection.read_until(b'\r').decode().strip()  # '+/-yy,yyy V'
 
         logger.debug(f"Command: {send_str!r} --> response: {response!r}")
 
