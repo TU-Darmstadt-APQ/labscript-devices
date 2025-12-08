@@ -21,7 +21,7 @@ from PyQt5.QtCore import Qt
 from labscript_devices.GPIBDevice import GPIBWorker
 
 # --- Others
-from .logger_config import logger
+# from .logger_config import logger
 
 
 
@@ -34,10 +34,10 @@ from .logger_config import logger
 ##############################################################################################################
 
 # Specifications for HP6626A:
-max_no_of_outputs : int = 4
-Watt_ratings : list[int] = [25, 25, 50, 50]
-voltage_decimals :int = 2
-current_decimals :int = 3
+max_no_of_outputs = 4
+Watt_ratings = [25, 25, 50, 50]
+voltage_decimals = 2
+current_decimals = 3
 
 # DC Output Range Specifications
 LOW_RANGE :bool = False
@@ -229,7 +229,7 @@ class HP_6626ATab(DeviceTab):
             widget_layout = widget.layout()     # which is a GridLayout Btw
             readback_widget = QLabel(f"Readback: {int_val}")
             self.readback_widgets[key] = readback_widget
-            widget_layout.addWidget(readback_widget,2,0,alignment=Qt.AlignmentFlag.AlignTop)   # row # column
+            widget_layout.addWidget(readback_widget,2,0)   # row # column
 
         self.auto_place_widgets(ao_widgets)
 
@@ -241,7 +241,7 @@ class HP_6626ATab(DeviceTab):
         for i in range(1,self.num_outputs +1):
             self.status_label = QLabel(f"Mode channel {i} : Unknown")
             self.status_labels_dict[i] = self.status_label
-            layout.addWidget(self.status_label,alignment=Qt.AlignmentFlag.AlignTop)
+            layout.addWidget(self.status_label)
 
 
 
@@ -252,7 +252,7 @@ class HP_6626ATab(DeviceTab):
     def program_device(self):
         DeviceTab.program_device(self)    # to don't disturb the basic functionalities
         current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
-        logger.info(current_output_values)
+        # logger.info(current_output_values)
         for key, value in current_output_values.items():
             self.readback_widgets[key].setText(f"Readback: {value}")
 

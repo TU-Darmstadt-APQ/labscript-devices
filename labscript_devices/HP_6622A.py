@@ -17,7 +17,7 @@ from PyQt5.QtCore import Qt
 from labscript_devices.GPIBDevice import GPIBWorker
 
 # --- Others
-from .logger_config import logger
+# from .logger_config import logger
 
 
 # TODO To investigate It seems that quering the readback values ist happening before setting value
@@ -29,13 +29,13 @@ from .logger_config import logger
 ##############################################################################################################
 
 # --- Specifications for HP6622A:
-max_no_of_outputs : int  = 2
-Watt_ratings : list[int] = [80, 80]
-voltage_decimals : int   = 2
-current_decimals : int   = 3
+max_no_of_outputs  = 2
+Watt_ratings  = [80, 80]
+voltage_decimals   = 2
+current_decimals   = 3
 
 # --- DC Output Range Specifications
-LOW_RANGE : bool = False
+LOW_RANGE = False
 MIN_VOLTAGE = 0
 MAX_VOLTAGE = 20
 MIN_CURRENT = 0
@@ -223,7 +223,7 @@ class HP_6622ATab(DeviceTab):
     def program_device(self):
         DeviceTab.program_device(self)    # to don't disturb the basic functionalities
         current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
-        logger.info(current_output_values)
+        # logger.info(current_output_values)
         for key, value in current_output_values.items():
             self.readback_widgets[key].setText(f"Readback: {value}")
 
