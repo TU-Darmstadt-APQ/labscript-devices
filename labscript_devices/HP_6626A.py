@@ -18,7 +18,7 @@ from PyQt5.QtCore import Qt
 # from qtutils.qt.QtGui import QDoubleValidator
 
 # --- Worker Imports
-from labscript_devices.GPIBDevice import GPIBWorker
+from labscript_devices.GPIBDevice import GPIBWorker,EosStrategy
 
 # --- Others
 from .logger_config import logger
@@ -38,6 +38,7 @@ max_no_of_outputs : int = 4
 Watt_ratings : list[int] = [25, 25, 50, 50]
 voltage_decimals :int = 2
 current_decimals :int = 3
+eos_strategy : EosStrategy = EosStrategy.LF
 
 # DC Output Range Specifications
 LOW_RANGE :bool = False
@@ -95,18 +96,15 @@ class HP_6626A(IntermediateDevice):
     '''
 
     allowed_children = [StaticAnalogQuantity]
-
     description = 'HP 6626A DC Power Supply'
 
-    @set_passed_properties(property_names={"connection_table_properties": ["num_outputs"]})
-    def __init__(self, name, GPIB_address, num_outputs=None, **kwargs):
-        # Following Phil's thesis, IntermediateDevice should be subclassed here:
+    @set_passed_properties(property_names={"connection_table_properties": ["num_outputs","eos_strategy"]})
+    def __init__(self, name, GPIB_address, num_outputs=None, eos_strategy = eos_strategy.value, **kwargs):
         IntermediateDevice.__init__(self, name, None, **kwargs)
-
         self.instructions = {}
-
         self.BLACS_connection = GPIB_address
-        if isinstance(num_outputs, int):
+        self.eos_strategy = eos_strategy
+        if isinstance(num_outputs, int):        # Check the number of outputs
             if num_outputs <= max_no_of_outputs:
                 self.num_outputs = num_outputs
             else:
@@ -153,11 +151,8 @@ class HP_6626A(IntermediateDevice):
             if output_table['c%d' % i] < MIN_CURRENT_50W_HIGH_RANGE or output_table['c%d' % i] > MAX_CURRENT_50W_HIGH_RANGE:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
 
-        # print('output_table',output_table)
-
         # Create device group in the HDF5 file:
         grp = self.init_device_group(hdf5_file)
-
         # Save Output to HDF5File:
         grp.create_dataset('OUTPUT_DATA', compression=config.compression, data=output_table)
 
