@@ -360,6 +360,7 @@ class HP_6626AWorker(GPIBWorker):
         return ' '.join(status)
 
     def get_readbacks(self):
+        time.sleep(0.06)  # allow adapter to flush writes (50ms should be enough)
         current_output_values = {}
         for i in range(1, self.num_outputs + 1 ):
             current_output_values[f'out{i}/voltage'] = np.round(float(self.get_v( i)) , voltage_decimals)
