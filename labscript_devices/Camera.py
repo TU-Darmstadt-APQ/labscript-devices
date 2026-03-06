@@ -10,10 +10,19 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
+from __future__ import division, unicode_literals, print_function, absolute_import
+
+from labscript_utils import check_version
+check_version('labscript', '2.0.1', '3')
+check_version('zprocess', '2.4.8', '3')
+from labscript_utils import PY2
+if PY2:
+    str = unicode
+
+from labscript_utils.numpy_dtype_workaround import dtype_workaround
 from labscript_devices import BLACS_tab
 from labscript import TriggerableDevice, LabscriptError, set_passed_properties
 import numpy as np
-from labscript_utils.in_exp_com import RunBaseClass
 
 
 class Camera(TriggerableDevice):
@@ -80,29 +89,15 @@ class Camera(TriggerableDevice):
         start = t
         end = t + duration
         for exposure in self.exposures:
-            _, other_t, _, other_duration, _ = exposure
+            _, other_t, _, other_duration = exposure
             other_start = other_t
             other_end = other_t + other_duration
             if abs(other_start - end) < self.minimum_recovery_time or abs(other_end - start) < self.minimum_recovery_time:
                 raise LabscriptError('%s %s has two exposures closer together than the minimum recovery time: ' % (self.description, self.name) +
                                      'one at t = %fs for %fs, and another at t = %fs for %fs. ' % (t, duration, start, duration) +
                                      'The minimum recovery time is %fs.' % self.minimum_recovery_time)
-        self.exposures.append((name, t, frametype, duration, len(self.exposures)))
+        self.exposures.append((name, t, frametype, duration))
         return duration
-
-    """
-    Gets the time of the latest image at time t
-    """
-    def get_time_active_image(self, t):
-        
-        exposure_times = [x[1] for x in self.exposures]
-        exposure_times = list(filter(lambda ex_t: ex_t <= t, exposure_times))
-        
-        if len(exposure_times) == 0:
-            return None
-        else:
-            return max(exposure_times)
-
 
     def do_checks(self):
         # Check that all Cameras sharing a trigger device have exposures when we have exposures:
@@ -110,7 +105,7 @@ class Camera(TriggerableDevice):
             if camera is not self:
                 for exposure in self.exposures:
                     if exposure not in camera.exposures:
-                        _, start, _, duration, _ = exposure
+                        _, start, _, duration = exposure
                         raise LabscriptError('Cameras %s and %s share a trigger. ' % (self.name, camera.name) +
                                              '%s has an exposure at %fs for %fs, ' % (self.name, start, duration) +
                                              'but there is no matching exposure for %s. ' % camera.name +
@@ -118,13 +113,13 @@ class Camera(TriggerableDevice):
 
     def generate_code(self, hdf5_file):
         self.do_checks()
-        table_dtypes = [('name', 'a256'), ('time', float), ('frametype', 'a256'), ('exposure_time', float), ('id', int)]
+        table_dtypes = [('name', 'a256'), ('time', float), ('frametype', 'a256'), ('exposure_time', float)]
         data = np.array(self.exposures, dtype=table_dtypes)
 
         group = self.init_device_group(hdf5_file)
 
-        # if self.exposures:
-        group.create_dataset('EXPOSURES', data=data)
+        if self.exposures:
+            group.create_dataset('EXPOSURES', data=data)
 
         # DEPRECATED backward campatibility for use of exposuretime keyword argument instead of exposure_time:
         self.set_property('exposure_time', self.exposure_time, location='device_properties', overwrite=True)
@@ -180,10 +175,7 @@ class CameraTab(DeviceTab):
             self.update_settings_and_check_connectivity()
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {
-            'port': self.ui.port_label.text(),
-            'jump_address': str(self.settings['connection_table'].jump_device_address)
-        }
+        worker_initialisation_kwargs = {'port': self.ui.port_label.text()}
         self.create_worker("main_worker", CameraWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
         self.update_settings_and_check_connectivity()
@@ -222,27 +214,6 @@ class CameraWorker(Worker):
         import zprocess
         global shared_drive
         import labscript_utils.shared_drive as shared_drive
-        from labscript_utils.ls_zprocess import ZMQClient
-
-        self.zmq = ZMQClient()
-
-        self.runner = RunBaseClass(self.device_name, self.jump_address)
-        self.runner.start()
-
-        self.zmq = ZMQClient()
-
-        def is_finished_callback():
-            response = self.zmq.get_string(self.port, self.host, 'status')
-            if response == "done":
-                return True
-            elif response == "error":
-                raise Exception("Tweezer controller is in error state!")
-
-            return False
-        def load_next(s):
-            pass
-        self.runner.set_is_finished_callback(is_finished_callback)
-        self.runner.set_load_next_section_callback(load_next)
 
         self.host = ''
         self.use_zmq = False
@@ -252,24 +223,81 @@ class CameraWorker(Worker):
         self.use_zmq = use_zmq
         if not self.host:
             return False
-        response = self.zmq.get_string(self.port, self.host, data='hello')
-        if response == 'hello':
+        if not self.use_zmq:
+            return self.initialise_sockets(self.host, self.port)
+        else:
+            response = zprocess.zmq_get_string(self.port, self.host, data='hello')
+            if response == 'hello':
+                return True
+            else:
+                raise Exception('invalid response from server: ' + str(response))
+
+    def initialise_sockets(self, host, port):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        assert port, 'No port number supplied.'
+        assert host, 'No hostname supplied.'
+        assert str(int(port)) == port, 'Port must be an integer.'
+        s.settimeout(10)
+        s.connect((host, int(port)))
+        s.send(b'hello\r\n')
+        response = s.recv(1024).decode('utf8')
+        s.close()
+        if 'hello' in response:
             return True
         else:
-            raise Exception('invalid response from server: ' + str(response))
+            raise Exception('invalid response from server: ' + response)
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         h5file = shared_drive.path_to_agnostic(h5file)
-
-        response = self.zmq.get_string(self.port, self.host, data=h5file)
+        if not self.use_zmq:
+            return self.transition_to_buffered_sockets(h5file, self.host, self.port)
+        response = zprocess.zmq_get_string(self.port, self.host, data=h5file)
         if response != 'ok':
+            raise Exception('invalid response from server: ' + str(response))
+        response = zprocess.zmq_get_string(self.port, self.host, timeout=10)
+        if response != 'done':
             raise Exception('invalid response from server: ' + str(response))
         return {}  # indicates final values of buffered run, we have none
 
+    def transition_to_buffered_sockets(self, h5file, host, port):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(120)
+        s.connect((host, int(port)))
+        s.send(b'%s\r\n' % h5file.encode('utf8'))
+        response = s.recv(1024).decode('utf8')
+        if not 'ok' in response:
+            s.close()
+            raise Exception(response)
+        response = s.recv(1024).decode('utf8')
+        if not 'done' in response:
+            s.close()
+            raise Exception(response)
+        return {}  # indicates final values of buffered run, we have none
+
     def transition_to_manual(self):
-        response = self.zmq.get_string(self.port, self.host, 'done')
+        if not self.use_zmq:
+            return self.transition_to_manual_sockets(self.host, self.port)
+        response = zprocess.zmq_get_string(self.port, self.host, 'done')
         if response != 'ok':
             raise Exception('invalid response from server: ' + str(response))
+        response = zprocess.zmq_get_string(self.port, self.host, timeout=100) #changed timeout from 10 to 100, like abort time in blacs
+        if response != 'done':
+            raise Exception('invalid response from server: ' + str(response))
+        return True  # indicates success
+
+    def transition_to_manual_sockets(self, host, port):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(120)
+        s.connect((host, int(port)))
+        s.send(b'done\r\n')
+        response = s.recv(1024).decode('utf8')
+        if response != 'ok\r\n':
+            s.close()
+            raise Exception(response)
+        response = s.recv(1024).decode('utf8')
+        if not 'done' in response:
+            s.close()
+            raise Exception(response)
         return True  # indicates success
 
     def abort_buffered(self):
@@ -279,9 +307,22 @@ class CameraWorker(Worker):
         return self.abort()
 
     def abort(self):
-        response = self.zmq.get_string(self.port, self.host, 'abort')
+        if not self.use_zmq:
+            return self.abort_sockets(self.host, self.port)
+        response = zprocess.zmq_get_string(self.port, self.host, 'abort')
         if response != 'done':
             raise Exception('invalid response from server: ' + str(response))
+        return True  # indicates success
+
+    def abort_sockets(self, host, port):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(120)
+        s.connect((host, int(port)))
+        s.send(b'abort\r\n')
+        response = s.recv(1024).decode('utf8')
+        if not 'done' in response:
+            s.close()
+            raise Exception(response)
         return True  # indicates success
 
     def program_manual(self, values):

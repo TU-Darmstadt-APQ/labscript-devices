@@ -1,0 +1,7 @@
+option to specify a range (default: 1..2500)
+
+all/more features (see manual)
+
+execute the library in a seperate thread (to make the program non-blocking)
+
+learn to use github again
