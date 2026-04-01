@@ -275,6 +275,7 @@ class PulseblasterNoDDSWorker(Worker):
         self.waits_pending = False
 
         pb_select_board(self.board_number)
+        print(self.board_number)
         pb_init()
         pb_core_clock(self.core_clock_freq)
 

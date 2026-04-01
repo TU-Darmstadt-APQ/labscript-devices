@@ -5,6 +5,7 @@ from labscript_utils.shared_drive import path_to_local
 from labscript import config, IntermediateDevice, StaticAnalogQuantity, LabscriptError, set_passed_properties
 import numpy as np
 import h5py
+import time
 
 # --- Blacs Imports 
 from blacs.tab_base_classes import define_state
@@ -14,7 +15,7 @@ from PyQt5.QtWidgets import QLabel,QWidget,QHBoxLayout
 from PyQt5.QtCore import Qt
 
 # --- Worker Imports
-from labscript_devices.GPIBDevice import GPIBWorker
+from labscript_devices.GPIBDevice import GPIBWorker,EosStrategy
 
 # --- Others
 # from .logger_config import logger
@@ -33,6 +34,7 @@ max_no_of_outputs  = 2
 Watt_ratings  = [80, 80]
 voltage_decimals   = 2
 current_decimals   = 3
+eos_strategy : EosStrategy = EosStrategy.LF
 
 # --- DC Output Range Specifications
 LOW_RANGE = False
@@ -85,12 +87,12 @@ class HP_6622A(IntermediateDevice):
     allowed_children = [StaticAnalogQuantity]
     description = 'HP 6622A DC Power Supply'
 
-    @set_passed_properties(property_names={"connection_table_properties": ["num_outputs"]})
-    def __init__(self, name, GPIB_address, num_outputs=None, **kwargs):
+    @set_passed_properties(property_names={"connection_table_properties": ["num_outputs","eos_strategy"]})
+    def __init__(self, name, GPIB_address, num_outputs=None, eos_strategy = eos_strategy.value , **kwargs):
         IntermediateDevice.__init__(self, name, None, **kwargs)
-
         self.instructions = {}
         self.BLACS_connection = GPIB_address
+        self.eos_strategy = eos_strategy
 
         # Check the number of outputs
         if isinstance(num_outputs, int):
@@ -120,7 +122,6 @@ class HP_6622A(IntermediateDevice):
         IntermediateDevice.generate_code(self, hdf5_file)
 
         # Initialise output table as structered numpy array with fields named 'vi' and 'ci', where 1 ≤ i ≤ num_outputs.
-        # output_voltage, output_current = {}, {}
         dtypes = [('v%d' % (i + 1), np.float32) for i in range(self.num_outputs)] + \
                  [('c%d' % (i + 1), np.float32) for i in range(self.num_outputs)]
 
@@ -335,6 +336,7 @@ class HP_6622AWorker(GPIBWorker):
         return ' '.join(status)
 
     def get_readbacks(self):
+        time.sleep(0.025)
         current_output_values = {}
         for i in range(1, self.num_outputs + 1 ):
             current_output_values[f'out{i}/voltage'] = np.round(float(self.get_v( i)) , voltage_decimals)

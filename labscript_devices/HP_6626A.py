@@ -5,6 +5,7 @@ from labscript_utils.shared_drive import path_to_local
 from labscript import config, IntermediateDevice, StaticAnalogQuantity, LabscriptError, set_passed_properties
 import numpy as np
 import h5py
+import time
 
 # --- Blacs Imports 
 from blacs.tab_base_classes import define_state
@@ -18,7 +19,7 @@ from PyQt5.QtCore import Qt
 # from qtutils.qt.QtGui import QDoubleValidator
 
 # --- Worker Imports
-from labscript_devices.GPIBDevice import GPIBWorker
+from labscript_devices.GPIBDevice import GPIBWorker,EosStrategy
 
 # --- Others
 # from .logger_config import logger
@@ -38,6 +39,7 @@ max_no_of_outputs = 4
 Watt_ratings = [25, 25, 50, 50]
 voltage_decimals = 2
 current_decimals = 3
+eos_strategy : EosStrategy = EosStrategy.LF
 
 # DC Output Range Specifications
 LOW_RANGE :bool = False
@@ -98,14 +100,13 @@ class HP_6626A(IntermediateDevice):
 
     description = 'HP 6626A DC Power Supply'
 
-    @set_passed_properties(property_names={"connection_table_properties": ["num_outputs"]})
-    def __init__(self, name, GPIB_address, num_outputs=None, **kwargs):
+    @set_passed_properties(property_names={"connection_table_properties": ["num_outputs","eos_strategy"]})
+    def __init__(self, name, GPIB_address, num_outputs=None,eos_strategy = eos_strategy.value, **kwargs):
         # Following Phil's thesis, IntermediateDevice should be subclassed here:
         IntermediateDevice.__init__(self, name, None, **kwargs)
-
         self.instructions = {}
-
         self.BLACS_connection = GPIB_address
+        self.eos_strategy = eos_strategy
         if isinstance(num_outputs, int):
             if num_outputs <= max_no_of_outputs:
                 self.num_outputs = num_outputs
@@ -152,8 +153,6 @@ class HP_6626A(IntermediateDevice):
             i += 1
             if output_table['c%d' % i] < MIN_CURRENT_50W_HIGH_RANGE or output_table['c%d' % i] > MAX_CURRENT_50W_HIGH_RANGE:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
-
-        # print('output_table',output_table)
 
         # Create device group in the HDF5 file:
         grp = self.init_device_group(hdf5_file)
@@ -251,13 +250,18 @@ class HP_6626ATab(DeviceTab):
     @define_state(MODE_MANUAL,True,delete_stale_states=True)
     def program_device(self):
         DeviceTab.program_device(self)    # to don't disturb the basic functionalities
-        current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
-        # logger.info(current_output_values)
-        for key, value in current_output_values.items():
-            self.readback_widgets[key].setText(f"Readback: {value}")
+        # current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
+        # # logger.info(current_output_values)
+        # for key, value in current_output_values.items():
+        #    self.readback_widgets[key].setText(f"Readback: {value}")
 
     @define_state(MODE_MANUAL, True)
     def status_monitor(self):
+        # get readback values (V,A)
+        current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
+        for key, value in current_output_values.items():
+            self.readback_widgets[key].setText(f"Readback: {value}")
+        # check status
         for chan in range(1,self.num_outputs +1):
             status_label = self.status_labels_dict[chan] 
             mode = yield (self.queue_work(self.primary_worker, "check_status",chan))
@@ -365,6 +369,7 @@ class HP_6626AWorker(GPIBWorker):
         return ' '.join(status)
 
     def get_readbacks(self):
+        time.sleep(0.025)
         current_output_values = {}
         for i in range(1, self.num_outputs + 1 ):
             current_output_values[f'out{i}/voltage'] = np.round(float(self.get_v( i)) , voltage_decimals)
@@ -406,8 +411,10 @@ class HP_6626AWorker(GPIBWorker):
         # Send Values via GPIB:
         final_values = {}
         for i in range(self.num_outputs):
+            time.sleep(0.01)
             self.send_GPIB_voltage(voltage=output_table['v%d' % (i + 1)], output=i + 1)
             final_values['out' + str(i + 1) + '/voltage'] = output_table['v%d' % (i + 1)]
+            time.sleep(0.01)
             self.send_GPIB_current(current=output_table['c%d' % (i + 1)], output=i + 1)
             final_values['out' + str(i + 1) + '/current'] = output_table['c%d' % (i + 1)]
         # Return final values to use them when transitioning to manual:
@@ -426,10 +433,13 @@ class HP_6626AWorker(GPIBWorker):
             current_table[i] = values['out' + str(i + 1) + '/current']
 
         for i in range(len(voltage_table)):
+            time.sleep(0.01)
             self.send_GPIB_voltage(voltage=voltage_table[i], output=i + 1)
         for i in range(len(current_table)):
+            time.sleep(0.01)
             self.send_GPIB_current(current=current_table[i], output=i + 1)
 
+        time.sleep(0.01)
         # return True to indicate we successfully transitioned back to manual mode
         return True
 
