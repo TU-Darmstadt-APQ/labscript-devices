@@ -99,6 +99,9 @@ class RFGeneratorSpecs(DeviceSpecs):
 # ------------------------------------------------------ STATS 
 @dataclass
 class RFGeneratorStats:
-    freq_mhz : float
-    power_dbm : float 
-    rf_on : Optional[bool]
+    freq_mhz    : float
+    power_dbm   : float 
+    rf_on       : Optional[bool] = None
+
+
+

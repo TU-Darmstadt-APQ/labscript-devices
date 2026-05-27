@@ -1,21 +1,24 @@
 import numpy as np
-from basic_device import RFGeneratorStats, UnitFreq
+# from labscript_utils.shared_drive import path_to_local  # TODO check import
 import labscript_utils.h5_lock
 import labscript_utils.properties
 import h5py
 
 from blacs.tab_base_classes import Worker
 import labscript_utils.properties
+
 from .agilent_4422B_device import AgilentE4422BDevice
+from .basic_device import RFGeneratorStats, UnitFreq
+from ..GPIBDevice import GPIBWorker, EosStrategy
 
 
 class AgilentE4422BWorker(GPIBWorker):
 
     def init(self):
-        # TODO Add a print GPIB TO CHECK ORDER
-        #  print( " THE WORKER EXPERIMENt : THE GPIB SUPER WORKER WAS CALLED ")  
-        self.device     = AgilentE4422BDevice( self.GPIB_connection.write , self.GPIB_connection.query)
-        print( " THE WORKER EXPERIMENt : AGILENT E4422B WAS CALLED ") 
+        super().init()
+        self.device             = AgilentE4422BDevice( self.GPIB_connection.write , self.GPIB_connection.query)
+        self.initial_state      = self.read_stats_from_device()
+
 
     # -------------------------- The usuals
     def program_manual(self, front_panel_values):
@@ -28,66 +31,72 @@ class AgilentE4422BWorker(GPIBWorker):
         return {"rf/frequency": frequency_hz, "rf/power": power_dbm }
 
 
+    def program_manual(self, front_panel_values):
+        frequency_hz = float(front_panel_values["rf_freq"])
+        power_dbm = float(front_panel_values["rf_amp"])
+
+
+        print(f" LabWork Frequency {frequency_hz}")
+        print(f" LabWork amp {power_dbm}")
+
+        # TODO CHECK VALUES FIRST
+        # self.device.set_freq(frequency_hz)
+        # self.device.set_power(power_dbm)
+
+
+        return { "rf_freq": frequency_hz,"rf_amp": power_dbm}
+
 
     def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
-
-        # For remote worker to find correct path:
+        print(" ===== TRANSITION TO BUFFERED ")
         if getattr(self, "is_remote", False):
             h5_filepath = path_to_local(h5_filepath)
 
-        # Start from manual-mode values, then overwrite with shot values from HDF5
-        # TODO Check this dance beetween inital values shot values and outputtable looks weird
-        dtypes = [ ("frequency_hz", np.float64),
-                   ("power_dbm", np.float32),
-        ]
-
-        output_table = np.zeros(1, dtype=dtypes)
-        output_table["frequency_hz"] = initial_values["rf/frequency"]
-        output_table["power_dbm"] = initial_values["rf/power"]
-
-        # Get values from experiment script / shot file
         with h5py.File(h5_filepath, "r") as hdf5_file:
+
+            if device_name not in hdf5_file["devices"]:
+                print(f"{device_name}: not in shot file, leaving unchanged.")
+                return initial_values
+
             group = hdf5_file["devices"][device_name]
             shot_values = group["OUTPUT_DATA"][0]
 
-            output_table["frequency_hz"] = shot_values["frequency_hz"]
-            output_table["power_dbm"] = shot_values["power_dbm"]
+            frequency_hz = float(shot_values["frequency_hz"])
+            power_dbm = float(shot_values["power_dbm"])
 
-        frequency_hz = float(output_table["frequency_hz"][0])
-        power_dbm = float(output_table["power_dbm"][0])
+        # TODO CHECK THESE VALUES 
+        # self.device.set_freq(frequency_hz)
+        # self.device.set_power(power_dbm)
+        print(f" LabWork Frequency {frequency_hz}")
+        print(f" LabWork amp {power_dbm}")
 
-        # Send values to instrument TODO 
-        # OLD self.send_GPIB_voltage(voltage=output_table['v%d' % (i + 1)], output=i + 1)
-        self.device.set_freq(frequency_hz)
-        self.device.set_power(power_dbm)
+        return { "rf_freq": frequency_hz,"rf_amp": power_dbm}
 
-        # Return final values for transition_to_manual()
-        self.final_values = {   "rf/frequency": frequency_hz,
-                                "rf/power": power_dbm }
-
-        return self.final_values
 
 
     def transition_to_manual(self, abort=False):
+        print(" ===== TRANSITION TO BUFFERED ")
         values = getattr(self, "final_values", None)
 
         if values is None:
             return True
 
-        frequency_hz = float(values["rf/frequency"])
-        power_dbm = float(values["rf/power"])
+        frequency_hz = float(values["rf_freq"])
+        power_dbm = float(values["rf_amp"])
 
-        self.device.set_freq(frequency_hz)
-        self.device.set_power(power_dbm)
+         # TODO CHECK THESE VALUES 
+        # self.device.set_freq(frequency_hz)
+        # self.device.set_power(power_dbm)
+        print(f" LabWork Frequency {frequency_hz}")
+        print(f" LabWork amp {power_dbm}")
 
         return True
-    
 
     # ------------------------------------------ Blacs Tabs functions
-    
+
     def apply_to_device(self, stats : RFGeneratorStats):
-        print(stats, print(type(stats)))
-        # TODO 
+        print(stats, type(stats))
+        # TODO LATER WHEN READY (PRINT ENOUGH FOR NOW)
         # self.device.set_freq(stats.freq_mhz , UnitFreq.MHZ)
         # self.device.set_power(stats.power_dbm)
         
@@ -102,7 +111,7 @@ class AgilentE4422BWorker(GPIBWorker):
 
     def set_output_rf(self, state):
         print(state , type(state))
-        # TODO  
+        # TODO LATER WHEN READY (PRINT ENOUGH FOR NOW)
         # self.device.set_output_rf(state)
 
 

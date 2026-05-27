@@ -1,6 +1,5 @@
 from enum import Enum
-from operator import add
-from basic_device import RFGeneratorSpecs, NumericSpec, UnitFreq, UnitPower
+from .basic_device import RFGeneratorSpecs, NumericSpec, UnitFreq, UnitPower
 import pyvisa as visa
 from typing import List, Tuple
 
@@ -74,11 +73,10 @@ class AgilentE4422BDevice:
 
 
     def __init__(self, write, query , addr = None):
+        ''' Pass an adress if you want to test Implementation directly'''
         self.write = write
         self.query = query
-        
         self.GPIB_address = addr
-
         if addr:
             self._device_init()
 
