@@ -3,7 +3,7 @@ from labscript.labscript import LabscriptError
 import socket
 import time
 from typing import Optional, Tuple
-from streamframer import *
+from .streamframer import *
 from enum import IntEnum, auto,Enum
 
 

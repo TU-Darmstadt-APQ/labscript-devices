@@ -1,7 +1,7 @@
 
 # --- Intermediate Device Imports 
 # from labscript_devices import runviewer_parser, BLACS_tab
-# from labscript_utils.shared_drive import path_to_local
+from labscript_utils.shared_drive import path_to_local
 from labscript import config, IntermediateDevice, StaticAnalogQuantity, LabscriptError, set_passed_properties,StaticDDS
 import numpy as np
 import h5py
@@ -10,6 +10,7 @@ import h5py
 from .basic_device import RFGeneratorSpecs
 from .agilent_4422B_device import agilent_e4422b_specs
 from ..GPIBDevice import GPIBWorker, EosStrategy
+
 
 
 # ---- STATIC DDS WRAPPER 
@@ -46,7 +47,7 @@ class AgilentE4422BRFOutput(StaticDDS):
         self.parent_device.specs.validate_power(power_dbm)
         self.setamp(power_dbm)
 
-    def set_rf_output(self, state: bool):
+    def set_output_rf(self, state: bool):
         if not isinstance(state, bool):
             raise TypeError("state must be bool")
         self.rf_output = state
@@ -70,7 +71,7 @@ class AgilentE4422B(IntermediateDevice):
 
             rf.setfreq(100e6)
             rf.setamp(-20)
-            rfgen.set_rf_output(True)
+            rfgen.set_output_rf(True)
         Args
             - name (str): Name of the device.
             - GPIB_address (str): GPIB address of the instrument. 
@@ -91,7 +92,7 @@ class AgilentE4422B(IntermediateDevice):
     allowed_children = [AgilentE4422BRFOutput]
     description = 'AgilentE4422B'
 
-    @set_passed_properties()
+    @set_passed_properties(property_names={"connection_table_properties": ["eos_strategy"]})
     def __init__(self, name, GPIB_address , eos_strategy = EosStrategy.LF.value , **kwargs):
         IntermediateDevice.__init__(self, name, None, **kwargs)
         self.BLACS_connection               = GPIB_address
@@ -99,39 +100,120 @@ class AgilentE4422B(IntermediateDevice):
         self.eos_strategy = eos_strategy
 
 
-    def _check_output(self, rf_output):
-        freq = float(rf_output.frequency.static_value)
-        amp = float(rf_output.amplitude.static_value)
+    def _get_rf_output_child(self):
+        if len(self.child_devices) != 1:
+            raise LabscriptError(
+                f"{self.name} needs exactly one RF output child."
+            )
 
-        print(f" LabDev Frequency {freq}")
-        print(f" LabDev amp {amp}")
-        self.specs.validate_frequency(freq)
-        self.specs.validate_power(amp)
+        rf_output = self.child_devices[0]
 
+        if not isinstance(rf_output, AgilentE4422BRFOutput):
+            raise LabscriptError(
+                f"{self.name} child must be AgilentE4422BRFOutput."
+            )
+
+        return rf_output
+
+    def _get_output_state(self, rf_output):
+        """
+        Convert labscript child state into normalized device state.
+
+        Important:
+        StaticDDS frequency may default to 0.0.
+        For this RF generator, 0 Hz is invalid, so we treat 0.0 as
+        "frequency unchanged", not as a real programmed value.
+        """
+
+        raw_freq = rf_output.frequency.static_value
+        raw_amp = rf_output.amplitude.static_value
+        raw_rf_output = rf_output.rf_output
+
+        frequency_hz = None
+        power_dbm = None
+        rf_output_state = None
+
+        if raw_freq is not None:
+            raw_freq = float(raw_freq)
+
+            if raw_freq != 0.0:
+                frequency_hz = raw_freq
+
+        if raw_amp is not None:
+            power_dbm = float(raw_amp)
+
+        if raw_rf_output is not None:
+            rf_output_state = bool(raw_rf_output)
+
+        return {
+            "frequency_hz": frequency_hz,
+            "power_dbm": power_dbm,
+            "rf_output": rf_output_state,
+        }
+
+    def _state_is_empty(self, state):
+        return (
+            state["frequency_hz"] is None
+            and state["power_dbm"] is None
+            and state["rf_output"] is None
+        )
+
+    def _validate_output_state(self, state):
+        if state["frequency_hz"] is not None:
+            self.specs.validate_frequency(state["frequency_hz"])
+
+        if state["power_dbm"] is not None:
+            self.specs.validate_power(state["power_dbm"])
+
+    def _make_output_table(self, state):
+        dtypes = [
+            ("frequency_hz", np.float64),
+            ("power_dbm", np.float64),
+            ("rf_output", np.int8),
+        ]
+
+        output_table = np.zeros(1, dtype=dtypes)
+
+        output_table["frequency_hz"] = (
+            np.nan
+            if state["frequency_hz"] is None
+            else state["frequency_hz"]
+        )
+
+        output_table["power_dbm"] = (
+            np.nan
+            if state["power_dbm"] is None
+            else state["power_dbm"]
+        )
+
+        # Tri-state RF output:
+        # -1 = unchanged
+        #  0 = OFF
+        #  1 = ON
+        output_table["rf_output"] = (
+            -1
+            if state["rf_output"] is None
+            else int(state["rf_output"])
+        )
+
+        return output_table
 
     def generate_code(self, hdf5_file):
         IntermediateDevice.generate_code(self, hdf5_file)
 
-        if len(self.child_devices) != 1:
-            raise LabscriptError(f"{self.name} needs exactly one RF output child.")
-        rf_output = self.child_devices[0]
+        rf_output = self._get_rf_output_child()
 
-        if not isinstance(rf_output, AgilentE4422BRFOutput):
-            raise LabscriptError(f"{self.name} child must be AgilentE4422BRFOutput.")
+        state = self._get_output_state(rf_output)
 
-        self._check_output(rf_output)
+        if self._state_is_empty(state):
+            return
 
-        dtypes = [  ("frequency_hz", np.float64),
-                    ("power_dbm", np.float64),
-                    ("rf_output", np.bool_)]
-        
+        self._validate_output_state(state)
 
-        output_table = np.zeros(1, dtype=dtypes)
-        output_table["frequency_hz"] = float(rf_output.frequency.static_value)
-        output_table["power_dbm"] = float(rf_output.amplitude.static_value)
-        output_table["rf_output"] = bool(rf_output.rf_output)
+        output_table = self._make_output_table(state)
 
         grp = self.init_device_group(hdf5_file)
+
         grp.create_dataset(
             "OUTPUT_DATA",
             compression=config.compression,

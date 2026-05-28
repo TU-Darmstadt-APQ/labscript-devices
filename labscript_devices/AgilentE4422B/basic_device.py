@@ -72,7 +72,6 @@ class RFGeneratorSpecs(DeviceSpecs):
 
     am_depth_percent: Optional[NumericSpec] = None
 
-
     def validate_frequency(self, value: Number, unit: UnitFreq = UnitFreq.HZ) -> None:
         self.frequency.validate(freq_to_hz(value, unit))
 

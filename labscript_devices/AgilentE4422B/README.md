@@ -31,12 +31,23 @@ Instrument:
 
 ```python
 
-# --- Connection table 
+# ------------------------ Connection table 
 AgilentE4422B( name="rfgen", GPIB_address="GPIB0::5")                       # If used with GPIB port 
 AgilentE4422B( name="rfgen", GPIB_address="ADAP::IP_ADRESS::GPIB_ADRESS")   # If used with Prologix like Adapter  
 AgilentE4422BRFOutput("rf", parent_device=rfgen, connection="rf")
 
-# --- Experiments script
-rf.setfreq_mhz(100)
-rf.setamp_dbm(-20)
-rf.set_rf_output(True)
+# ------------------------ Experiments script
+
+# --- Set Freq
+rf.setfreq_mhz(100)     # in MHz
+rf.setfreq_khz(250)     # in KHz
+
+# --- Set Amp
+rf.setamp_dbm(-20) 
+
+# --- Set Rf Output On/Off
+rf.set_output_rf(True)
+
+
+
+
