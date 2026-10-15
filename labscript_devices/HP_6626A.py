@@ -375,7 +375,14 @@ class HP_6626AWorker(GPIBWorker):
 
     # -------------------------- Worker/Tab methodes
     def check_status(self,chan):
-        mode = self.get_mode(chan)
+        try:
+            mode = self.get_mode(chan)
+        except LabscriptError:
+            self.logger.exception("Failed reading status for output %s", chan)
+            return 'Unknown'
+        if mode is None:
+            self.logger.warning("Invalid status response for output %s", chan)
+            return 'Unknown'
         
         meanings = ['CV', '+CC', '-CC', 'OV', 'OT', 'UNR', 'OC', 'CP']  # Page 74 OPERATING MANUAL 6622A
         status = []
@@ -400,12 +407,18 @@ class HP_6626AWorker(GPIBWorker):
         time.sleep(0.025)
         current_output_values = {}
         for i in range(1, self.num_outputs + 1 ):
-            current_output_values[f'out{i}/voltage'] = self._check_output(
-                self.get_v(i), voltage_decimals
-            )
-            current_output_values[f'out{i}/current'] = self._check_output(
-                self.get_i(i), current_decimals
-            )
+            for quantity, getter, decimals in (
+                ('voltage', self.get_v, voltage_decimals),
+                ('current', self.get_i, current_decimals),
+            ):
+                key = f'out{i}/{quantity}'
+                try:
+                    value = getter(i)
+                except LabscriptError:
+                    self.logger.exception("Failed reading %s", key)
+                    current_output_values[key] = np.nan
+                else:
+                    current_output_values[key] = self._check_output(value, decimals)
 
         return current_output_values
 
