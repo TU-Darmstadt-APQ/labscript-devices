@@ -110,7 +110,7 @@ class NI_DAQmxOutputWorker(Worker):
         def is_finished_callback():
             # WAIT_TIME = 0.5
             return_val = True
-            if self.AO_task is not None and self.AO_active:
+            if self.AO_task is not None and self.AO_active and not self.AO_all_zero:
                 try:
                     self.AO_task.WaitUntilTaskDone(0)
                 except:

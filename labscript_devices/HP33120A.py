@@ -201,8 +201,8 @@ class HP33120A_Worker(GPIBWorker):
         self.wave = []
         self.ext_trigger = False
         self.GPIB_connection.timeout = 3000
-        self.GPIB_connection.write('OUTP:LOAD INF')  # Set output_Load to infinity
-        self.GPIB_connection.write('VOLT:UNIT VPP')
+        self.write_with_reconnect('OUTP:LOAD INF')  # Set output_Load to infinity
+        self.write_with_reconnect('VOLT:UNIT VPP')
 
     def program_manual(self, front_panel_values):
         frequency = front_panel_values['frequency']
@@ -221,7 +221,7 @@ class HP33120A_Worker(GPIBWorker):
                 if not (frequency >= MIN_FREQUENCY and frequency < MAX_FREQUENCY):
                     raise Exception("Frequency {} is out of range {} - {}. Is the frequency in Hz?".format(frequency, MIN_FREQUENCY, MAX_FREQUENCY))
 
-                self.GPIB_connection.write("FREQ {}".format(frequency))
+                self.write_with_reconnect("FREQ {}".format(frequency))
                 self.frequency = frequency
 
         if amplitude is not None:
@@ -230,7 +230,7 @@ class HP33120A_Worker(GPIBWorker):
                 if amplitude < MIN_VOLTAGE or amplitude > MAX_VOLTAGE:
                     raise Exception("Amplitude {} is out of range {} - {}. Is the voltage in V?".format(amplitude, MIN_VOLTAGE, MAX_VOLTAGE))
 
-                self.GPIB_connection.write("VOLT {0:.2f}".format(amplitude))
+                self.write_with_reconnect("VOLT {0:.2f}".format(amplitude))
                 self.amplitude = amplitude
 
         if offset is not None:
@@ -239,15 +239,15 @@ class HP33120A_Worker(GPIBWorker):
                 if offset < MIN_OFFSET or offset > MAX_OFFSET:
                     raise Exception("Offset voltage {} is out of range {} - {}. Is the offset voltage in V?".format(offset, MIN_OFFSET, MAX_OFFSET))
 
-                self.GPIB_connection.write("VOLT:OFFS {0:.3f}".format(offset))
+                self.write_with_reconnect("VOLT:OFFS {0:.3f}".format(offset))
                 self.offset = offset
 
         ext_trigger = bool(ext_trigger)  # cast frequency to int!
         if ext_trigger != self.ext_trigger:
             if ext_trigger:
-                self.GPIB_connection.write("TRIG:SOUR EXT")
+                self.write_with_reconnect("TRIG:SOUR EXT")
             else:
-                self.GPIB_connection.write("TRIG:SOUR IMM")
+                self.write_with_reconnect("TRIG:SOUR IMM")
             self.ext_trigger = ext_trigger
 
     def setWaveForm(self, waveform):
@@ -270,10 +270,10 @@ class HP33120A_Worker(GPIBWorker):
             print('timeout:', self.GPIB_connection.timeout)
             for i, value in enumerate(waveform):
                 sendString = "{0}, {1:.3f}".format(sendString, float(value))
-            self.GPIB_connection.write(sendString)
-            self.GPIB_connection.write("DATA:COPY LABSCRIP")
-            self.GPIB_connection.write("FUNC:USER LABSCRIP")
-            self.GPIB_connection.write("FUNC:SHAPE USER")
+            self.write_with_reconnect(sendString)
+            self.write_with_reconnect("DATA:COPY LABSCRIP")
+            self.write_with_reconnect("FUNC:USER LABSCRIP")
+            self.write_with_reconnect("FUNC:SHAPE USER")
             self.wave = waveform
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):

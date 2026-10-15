@@ -462,19 +462,24 @@ class EosStrategy(IntEnum):
 #  ----------------------------------------------------------------------------------
 #                                   Worker CLASS
 # -----------------------------------------------------------------------------------
+from pyvisa.constants import StatusCode
+import pyvisa
+
 class GPIBWorker(Worker):
     PORT = 1234
+
     def init(self):
         global visa
         import pyvisa as visa
         global h5py
-        import labscript_utils.h5_lock
         import h5py
 
         self.rm = None
         self.GPIB_connection = None
     
         self.init_GPIB()
+
+        self.is_in_error_state = False
         
     def init_GPIB(self):
         # Case 1 : GPIB 
@@ -522,7 +527,93 @@ class GPIBWorker(Worker):
     def transition_to_manual(self):
         return True  
     
+ # --- XXX Timeout Error lost connecttion HACK   
 
+    def reconnect(self):
+        self.init_GPIB()
+
+    def query_with_reconnect(self, command):
+        RED = "\033[91m"
+        GREEN = "\033[92m"
+        RESET = "\033[0m"
+
+        try:
+            result = self.GPIB_connection.query(command)
+            self.is_in_error_state = False
+            return result
+
+        except pyvisa.errors.VisaIOError as e:
+            if e.error_code != StatusCode.error_timeout:
+                self.is_in_error_state = True
+                raise
+
+            print(f"{RED}VISA timeout on {command!r}. Reconnecting...{RESET}")
+
+            try:
+                self.reconnect()
+                print(f"{GREEN}Reconnection succeeded.{RESET}")
+            except Exception as reconnect_error:
+                self.is_in_error_state = True
+                print(f"{RED}Reconnection failed: {reconnect_error}{RESET}")
+                raise
+
+            try:
+                result = self.GPIB_connection.query(command)
+                self.is_in_error_state = False
+                print(f"{GREEN}Query succeeded after reconnection: {command!r}{RESET}")
+                return result
+
+            except pyvisa.errors.VisaIOError as e2:
+                self.is_in_error_state = True
+
+                if e2.error_code == StatusCode.error_timeout:
+                    print(f"{RED}Query still timed out after reconnection: {command!r}{RESET}")
+                else:
+                    print(f"{RED}Query failed after reconnection with VISA error: {e2}{RESET}")
+
+                raise
+
+
+    def write_with_reconnect(self, command):
+        RED = "\033[91m"
+        GREEN = "\033[92m"
+        RESET = "\033[0m"
+
+        try:
+            result = self.GPIB_connection.write(command)
+            self.is_in_error_state = False
+            return result
+
+        except pyvisa.errors.VisaIOError as e:
+            if e.error_code != StatusCode.error_timeout:
+                self.is_in_error_state = True
+                raise
+
+            print(f"{RED}VISA timeout on {command!r}. Reconnecting...{RESET}")
+
+            try:
+                self.reconnect()
+                print(f"{GREEN}Reconnection succeeded.{RESET}")
+            except Exception as reconnect_error:
+                self.is_in_error_state = True
+                print(f"{RED}Reconnection failed: {reconnect_error}{RESET}")
+                raise
+
+            try:
+                result = self.GPIB_connection.write(command)
+                self.is_in_error_state = False
+                print(f"{GREEN}Write succeeded after reconnection: {command!r}{RESET}")
+                return result
+
+            except pyvisa.errors.VisaIOError as e2:
+                self.is_in_error_state = True
+
+                if e2.error_code == StatusCode.error_timeout:
+                    print(f"{RED}Write still timed out after reconnection: {command!r}{RESET}")
+                else:
+                    print(f"{RED}Write failed after reconnection with VISA error: {e2}{RESET}")
+
+                raise
 #  ----------------------------------------------------------------------------------
 #                                   ADAPTER CLASS
 # -----------------------------------------------------------------------------------

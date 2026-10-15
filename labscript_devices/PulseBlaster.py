@@ -755,7 +755,7 @@ class PulseBlasterTab(DeviceTab):
         self.primary_worker = "main_worker"
         
         # Set the capabilities of this device
-        self.supports_smart_programming(True) 
+        self.supports_smart_programming(False) 
         
         # Load status monitor (and start/stop/reset buttons) UI
         ui = UiLoader().load(os.path.join(os.path.dirname(os.path.realpath(__file__)),'pulseblaster.ui'))        

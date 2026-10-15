@@ -67,7 +67,7 @@ class HP53131AWorker(GPIBWorker):
         pass
 
     def transition_to_manual(self, *args, **kwargs):
-        freq = self.GPIB_connection.query(":READ:FREQ?")
+        freq = self.query_with_reconnect(":READ:FREQ?")
 
         with h5py.File(self.h5_file, 'a') as hdf5_file:
             data_group = hdf5_file['data']
@@ -76,7 +76,7 @@ class HP53131AWorker(GPIBWorker):
         return True
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
-        self.GPIB_connection.write(":FUNC 'FREQ 1'")
+        self.write_with_reconnect(":FUNC 'FREQ 1'")
         self.h5_file = h5file
         self.device_name = device_name
         return {}

@@ -202,7 +202,7 @@ class HP_6632BWorker(GPIBWorker):
         if voltage is not None:
             sendStr = "VOLT "
             sendStr += str(voltage)
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
             # print('send', sendStr)
 
     def send_GPIB_current(self, current=None):
@@ -217,14 +217,14 @@ class HP_6632BWorker(GPIBWorker):
         if current is not None:
             sendStr = "CURR "
             sendStr += str(current)
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
             # print('send', sendStr)
 
     # TODO: check for remote values and warn if control_mode is changing
     def check_channel_control(self, channel):
         return
-        # out_value_voltage = np.round(np.float(self.GPIB_connection.query('VOUT?')), voltage_decimals)
-        # out_value_current = np.round(np.float(self.GPIB_connection.query('IOUT?')), current_decimals)
+        # out_value_voltage = np.round(np.float(self.query_with_reconnect('VOUT?')), voltage_decimals)
+        # out_value_current = np.round(np.float(self.query_with_reconnect('IOUT?')), current_decimals)
 
         # print('Output voltage is {}; output current is {}'.format(out_value_voltage, out_value_current))
 

@@ -236,31 +236,31 @@ class GX5000_MoDWorker(GPIBWorker):
         output = filter(lambda x: x.isupper(), output)
 
         if self.pulse_periode != pulse_periode or no_check:
-            self.GPIB_connection.write(":SOUR:PULS:PER {}".format(self.time_convert(pulse_periode)).rstrip('\n\r '))
+            self.write_with_reconnect(":SOUR:PULS:PER {}".format(self.time_convert(pulse_periode)).rstrip('\n\r '))
             self.pulse_periode = pulse_periode
 
         if self.pulse_delay != pulse_delay or no_check:
-            self.GPIB_connection.write(":SOUR:PULS:DEL {}".format(self.time_convert(pulse_delay)))
+            self.write_with_reconnect(":SOUR:PULS:DEL {}".format(self.time_convert(pulse_delay)))
             self.pulse_delay = pulse_delay
 
         if self.pulse_width != pulse_width or no_check:
-            self.GPIB_connection.write(":SOUR:PULS:WIDT {}".format(self.time_convert(pulse_width)))
+            self.write_with_reconnect(":SOUR:PULS:WIDT {}".format(self.time_convert(pulse_width)))
             self.pulse_width = pulse_width
 
         if self.trigger_mode != trigger_mode or no_check:
-            self.GPIB_connection.write(":TRIG:MODE {}".format(trigger_mode))
+            self.write_with_reconnect(":TRIG:MODE {}".format(trigger_mode))
             self.trigger_mode = trigger_mode
 
         if self.trigger_source != trigger_source or no_check:
-            self.GPIB_connection.write(":TRIG:SOUR {}".format(trigger_source))
+            self.write_with_reconnect(":TRIG:SOUR {}".format(trigger_source))
             self.trigger_source = trigger_source
 
         if self.pulse_polarity != pulse_polarity or no_check:
-            self.GPIB_connection.write(":SOUR:PULS:POL {}".format(pulse_polarity))
+            self.write_with_reconnect(":SOUR:PULS:POL {}".format(pulse_polarity))
             self.pulse_polarity = pulse_polarity
 
         if self.output != output or no_check:
-            self.GPIB_connection.write(":OUTP:STAT {}".format(output))
+            self.write_with_reconnect(":OUTP:STAT {}".format(output))
             self.output = output
 
     def time_convert(self, time):

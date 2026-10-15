@@ -259,7 +259,7 @@ class RS_SignalGenerator_FMWorker(GPIBWorker):
             sendStr += "{0:.6f}".format(float(frequency) / 1E3)  # first digit is 10GHz, so print leading zeros!
             sendStr += "kHZ"
             # self.send_string('FM:INT:FREQ 50kHZ')
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
 
     def program_manual(self, front_panel_values):
         frequ = front_panel_values['frequency']  # in MHz!
@@ -292,7 +292,7 @@ class RS_SignalGenerator_FMWorker(GPIBWorker):
         return {'frequency': frequency / 1e3}
 
     def send_string(self, string):
-        self.GPIB_connection.write(string)
+        self.write_with_reconnect(string)
 
 
 @runviewer_parser

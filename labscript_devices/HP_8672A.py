@@ -388,7 +388,7 @@ class HP_8672AWorker(GPIBWorker):
             # Z0: Execute
             # N6: FM off
             sendStr += "Z0N6"
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
 
     def send_igor_frequency(self, frequency):
         return

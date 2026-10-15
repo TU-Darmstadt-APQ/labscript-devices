@@ -20,6 +20,11 @@ class PulseBlasterESRPro400(PulseBlaster_No_DDS):
     clock_resolution = 4e-9
     n_flags = 21
     core_clock_freq = 400.0
+    
+    def __init__(self, *args, **kwargs):
+        if 'max_instructions' not in kwargs:
+            kwargs['max_instructions'] = 32000
+        PulseBlaster_No_DDS.__init__(self, *args, **kwargs)
 
 
 @BLACS_tab    

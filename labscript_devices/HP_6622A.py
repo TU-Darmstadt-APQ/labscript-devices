@@ -262,7 +262,7 @@ class HP_6622AWorker(GPIBWorker):
     def set_v(self,chan,voltage):
         try:
             sendStr = f"VSET {chan},{voltage}"
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError("Failed setting voltage : ",e)
 
@@ -270,14 +270,14 @@ class HP_6622AWorker(GPIBWorker):
         # Accuracy of the readback value over an interface is the same as the analog-to-digital converter
         try:
             sendStr = f"VOUT? {chan}" 
-            return self.GPIB_connection.query(sendStr)
+            return self.query_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError("Failed getting voltage : ",e)
         
     def set_i(self, chan, current):
         try:
             sendStr = f"ISET {chan},{current}"
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError(f"Failed setting current: {e}")
 
@@ -285,14 +285,14 @@ class HP_6622AWorker(GPIBWorker):
         # Accuracy of the readback value over an interface is the same as the analog-to-digital converter
         try:
             sendStr = f"IOUT? {chan}"
-            return self.GPIB_connection.query(sendStr)
+            return self.query_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError(f"Failed getting current: {e}")
         
     def get_mode(self,chan):
         try:
             sendStr = f"STS? {chan}"
-            result = self.GPIB_connection.query(sendStr)
+            result = self.query_with_reconnect(sendStr)
             return int(result)
         except Exception as e:
             raise LabscriptError(f"Failed getting mode: {e}")

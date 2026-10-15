@@ -19,7 +19,9 @@ from PyQt5.QtCore import Qt
 # from qtutils.qt.QtGui import QDoubleValidator
 
 # --- Worker Imports
-from labscript_devices.GPIBDevice import GPIBWorker,EosStrategy
+# from labscript_devices.GPIBDevice import GPIBWorker, EosStrategy
+from user_devices.GPIB_Adapter.utils_gpib_adapter import EosStrategy
+from user_devices.GPIB_Adapter.gpib_worker import GPIBWorker
 
 # --- Others
 # from .logger_config import logger
@@ -222,13 +224,13 @@ class HP_6626ATab(DeviceTab):
         _, ao_widgets, _ = self.auto_create_widgets()
 
         # --- Readback widgets
-        int_val = 0
+
         self.readback_widgets = {}
         for key,widget in ao_widgets.items():
             widget_layout = widget.layout()     # which is a GridLayout Btw
-            readback_widget = QLabel(f"Readback: {int_val}")
+            readback_widget = QLabel(f"Readback: --")
             self.readback_widgets[key] = readback_widget
-            widget_layout.addWidget(readback_widget,2,0)   # row # column
+            widget_layout.addWidget(readback_widget,2,0,1,2)   # row # column
 
         self.auto_place_widgets(ao_widgets)
 
@@ -250,10 +252,10 @@ class HP_6626ATab(DeviceTab):
     @define_state(MODE_MANUAL,True,delete_stale_states=True)
     def program_device(self):
         DeviceTab.program_device(self)    # to don't disturb the basic functionalities
-        # current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
+        current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
         # # logger.info(current_output_values)
-        # for key, value in current_output_values.items():
-        #    self.readback_widgets[key].setText(f"Readback: {value}")
+        for key, value in current_output_values.items():
+           self.readback_widgets[key].setText(f"Readback: {value}")
 
     @define_state(MODE_MANUAL, True)
     def status_monitor(self):
@@ -295,7 +297,7 @@ class HP_6626AWorker(GPIBWorker):
     def set_v(self,chan,voltage):
         try:
             sendStr = f"VSET {chan},{voltage}"
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError("Failed setting voltage : ",e)
 
@@ -303,14 +305,14 @@ class HP_6626AWorker(GPIBWorker):
         # Accuracy of the readback value over an interface is the same as the analog-to-digital converter
         try:
             sendStr = f"VOUT? {chan}" 
-            return self.GPIB_connection.query(sendStr)
+            return self.query_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError("Failed getting voltage : ",e)
         
     def set_i(self, chan, current):
         try:
             sendStr = f"ISET {chan},{current}"
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError(f"Failed setting current: {e}")
 
@@ -318,17 +320,23 @@ class HP_6626AWorker(GPIBWorker):
         # Accuracy of the readback value over an interface is the same as the analog-to-digital converter
         try:
             sendStr = f"IOUT? {chan}"
-            return self.GPIB_connection.query(sendStr)
+            return self.query_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError(f"Failed getting current: {e}")
         
+
     def get_mode(self,chan):
         try:
-            sendStr = f"STS? {chan}"
-            result = self.GPIB_connection.query(sendStr)
-            return int(result)
+            sendStr = f"STS? {int(chan)}"
+            result = self.query_with_reconnect(sendStr)
+            
+            try:
+                return int(result)
+            except (ValueError, TypeError):
+                return None
         except Exception as e:
             raise LabscriptError(f"Failed getting mode: {e}")
+
         
     # -------------------------- Worker/Instrument methodes
     def send_GPIB_voltage(self, voltage=None, output=None):
@@ -368,12 +376,27 @@ class HP_6626AWorker(GPIBWorker):
                 status.append(meanings[i])
         return ' '.join(status)
 
+
+    def _check_output(self, val, round_dec):
+        try: 
+            res = float(val)
+            res = np.round(res , round_dec)
+            return res
+        except (ValueError, TypeError):
+            return np.nan
+
+
     def get_readbacks(self):
         time.sleep(0.025)
         current_output_values = {}
         for i in range(1, self.num_outputs + 1 ):
-            current_output_values[f'out{i}/voltage'] = np.round(float(self.get_v( i)) , voltage_decimals)
-            current_output_values[f'out{i}/current'] = np.round(float(self.get_i( i)), current_decimals)
+            current_output_values[f'out{i}/voltage'] = self._check_output(
+                self.get_v(i), voltage_decimals
+            )
+            current_output_values[f'out{i}/current'] = self._check_output(
+                self.get_i(i), current_decimals
+            )
+
         return current_output_values
 
     # -------------------------- The usuals

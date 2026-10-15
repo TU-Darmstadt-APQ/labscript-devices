@@ -67,7 +67,7 @@ class EIP_545AWorker(GPIBWorker):
         pass
 
     def transition_to_manual(self, *args, **kwargs):
-        freq = float(self.GPIB_connection.query('B3R0FAFRH'))
+        freq = float(self.query_with_reconnect('B3R0FAFRH'))
 
         with h5py.File(self.h5_file, 'a') as hdf5_file:
             data_group = hdf5_file['data']

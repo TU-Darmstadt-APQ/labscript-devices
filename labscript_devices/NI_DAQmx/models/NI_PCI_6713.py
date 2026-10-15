@@ -30,7 +30,7 @@ CAPABILITIES = {
     'AO_range': [-10.0, 10.0],
     'max_AI_multi_chan_rate': None,
     'max_AI_single_chan_rate': None,
-    'max_AO_sample_rate': 1000000.0,
+    'max_AO_sample_rate': 600000.0,
     'max_DO_sample_rate': None,
     'min_semiperiod_measurement': 2e-05,
     'num_AI': 0,
