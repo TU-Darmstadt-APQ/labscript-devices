@@ -253,6 +253,11 @@ class HP_6626ATab(DeviceTab):
     def program_device(self):
         DeviceTab.program_device(self)    # to don't disturb the basic functionalities
         current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
+        if current_output_values is None:
+            self.logger.warning("Readback failed; see the BLACS worker traceback")
+            for widget in self.readback_widgets.values():
+                widget.setText("Readback: unavailable")
+            return
         # # logger.info(current_output_values)
         for key, value in current_output_values.items():
            self.readback_widgets[key].setText(f"Readback: {value}")
@@ -261,6 +266,11 @@ class HP_6626ATab(DeviceTab):
     def status_monitor(self):
         # get readback values (V,A)
         current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
+        if current_output_values is None:
+            self.logger.warning("Readback failed; see the BLACS worker traceback")
+            for widget in self.readback_widgets.values():
+                widget.setText("Readback: unavailable")
+            return
         for key, value in current_output_values.items():
             self.readback_widgets[key].setText(f"Readback: {value}")
         # check status
