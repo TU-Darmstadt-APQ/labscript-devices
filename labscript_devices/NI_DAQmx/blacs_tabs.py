@@ -27,6 +27,7 @@ from qtutils.qt.QtGui import *
 from qtutils.qt.QtWidgets import *
 from labscript_utils.qtwidgets.toolpalette import ToolPaletteGroup
 from labscript_utils.labconfig import LabConfig
+from labscript_utils.unitconversions import get_unit_conversion_class
 
 
 class MyCombiButton(QPushButton):
@@ -52,6 +53,28 @@ class NI_DAQmxTab(DeviceTab):
         self.combi_btns = []
         self.exp_config = LabConfig()
         DeviceTab.__init__(self, *args, **kwargs)
+
+    def create_analog_input_widgets(self, channel_properties):
+        widgets = super().create_analog_input_widgets(channel_properties)
+        for channel, widget in widgets.items():
+            device = self.get_child_from_connection_table(self.device_name, channel)
+            if device is None or device.unit_conversion_class in (None, 'None'):
+                continue
+            conversion = get_unit_conversion_class(device.unit_conversion_class)(
+                device.unit_conversion_params
+            )
+            if not conversion.derived_units:
+                continue
+            # Display the first derived unit provided by the connection table conversion.
+            unit = conversion.derived_units[0]
+            from_base = getattr(conversion, unit + '_from_base')
+
+            def set_value(value, set_value=widget.set_value, from_base=from_base):
+                set_value(from_base(value) if value is not None else None)
+
+            widget.set_value = set_value
+            widget._label.setText(widget._label.text() + '\n(%s)' % unit)
+        return widgets
 
     def load_output_combinations(self, path):  # added by Rene Kolb
         config_filepath = os.path.join(path, self._device_name + '.cfg')
