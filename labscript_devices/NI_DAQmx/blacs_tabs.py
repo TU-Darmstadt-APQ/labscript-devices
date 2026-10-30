@@ -15,19 +15,21 @@ import h5py
 from labscript_utils import dedent
 import json
 import os
+import threading
 
 from blacs.device_base_class import DeviceTab
+from .analog_input_plot import NIAnalogInputPlotWindow
 from .utils import split_conn_AO, split_conn_DO
 from . import models
 import warnings
 
-from configparser import SafeConfigParser
+from configparser import ConfigParser
+from qtutils import inmain_decorator
 from qtutils.qt.QtCore import *
 from qtutils.qt.QtGui import *
 from qtutils.qt.QtWidgets import *
 from labscript_utils.qtwidgets.toolpalette import ToolPaletteGroup
 from labscript_utils.labconfig import LabConfig
-from labscript_utils.unitconversions import get_unit_conversion_class
 
 
 class MyCombiButton(QPushButton):
@@ -56,25 +58,78 @@ class NI_DAQmxTab(DeviceTab):
 
     def create_analog_input_widgets(self, channel_properties):
         widgets = super().create_analog_input_widgets(channel_properties)
+        self._ai_displays = {}
+        self._ai_show_volts = None
+        if not widgets:
+            return widgets
+        self._ai_show_volts = QCheckBox('Show inputs in volts')
+        self._ai_show_volts.toggled.connect(self._update_AI_displays)
+        self.get_tab_layout().addWidget(self._ai_show_volts)
         for channel, widget in widgets.items():
             device = self.get_child_from_connection_table(self.device_name, channel)
-            if device is None or device.unit_conversion_class in (None, 'None'):
-                continue
-            conversion = get_unit_conversion_class(device.unit_conversion_class)(
-                device.unit_conversion_params
-            )
-            if not conversion.derived_units:
-                continue
-            # Display the first derived unit provided by the connection table conversion.
-            unit = conversion.derived_units[0]
-            from_base = getattr(conversion, unit + '_from_base')
+            properties = device.properties if device is not None else {}
+            units = properties.get('units', 'V')
+            display = {
+                'widget': widget,
+                'set_value': widget.set_value,
+                'label': widget._label.text(),
+                'value': None,
+                'scale_factor': properties.get('scale_factor', 1.0),
+                'units': 'V' if units == 'Volts' else units,
+            }
+            self._ai_displays[channel] = display
 
-            def set_value(value, set_value=widget.set_value, from_base=from_base):
-                set_value(from_base(value) if value is not None else None)
+            @inmain_decorator(True)
+            def set_value(value, display=display):
+                display['value'] = value
+                self._update_AI_display(display)
 
             widget.set_value = set_value
-            widget._label.setText(widget._label.text() + '\n(%s)' % unit)
+            widget._plot_btn.clicked.disconnect(widget.open_plot_window)
+            widget._plot_btn.clicked.connect(
+                lambda checked=False, channel=channel: self._open_AI_plot(channel)
+            )
+            self._update_AI_display(display)
         return widgets
+
+    def _update_AI_display(self, display):
+        show_volts = self._ai_show_volts.isChecked()
+        value = display['value']
+        if value is not None and not show_volts:
+            value *= display['scale_factor']
+        display['set_value'](value)
+        units = 'V' if show_volts else display['units']
+        display['widget']._label.setText(display['label'] + '\n(%s)' % units)
+
+    def _update_AI_displays(self, show_volts):
+        for display in self._ai_displays.values():
+            self._update_AI_display(display)
+            widget = display['widget']
+            if widget.win is not None and widget.to_child is not None:
+                widget.to_child.put(('show_volts', show_volts))
+
+    def _open_AI_plot(self, channel):
+        display = self._ai_displays[channel]
+        widget = display['widget']
+        if widget.win is None:
+            widget.win = NIAnalogInputPlotWindow()
+            widget.to_child, widget.from_child = widget.win.start(
+                widget._connection_name, channel, self.device_name,
+                display['scale_factor'], display['units'],
+                self._ai_show_volts.isChecked(),
+            )
+            threading.Thread(target=widget._check_plot_window, daemon=True).start()
+        else:
+            widget.to_child.put('focus')
+
+    def get_save_data(self):
+        if self._ai_show_volts is None:
+            return {}
+        return {'ai_show_volts': self._ai_show_volts.isChecked()}
+
+    def restore_save_data(self, save_data):
+        if self._ai_show_volts is not None:
+            self._ai_show_volts.setChecked(save_data.get('ai_show_volts', False))
 
     def load_output_combinations(self, path):  # added by Rene Kolb
         config_filepath = os.path.join(path, self._device_name + '.cfg')
@@ -82,7 +137,7 @@ class NI_DAQmxTab(DeviceTab):
         if not os.path.exists(config_filepath):
             return {}  # the file does not exist, so no combinations exist
 
-        parser = SafeConfigParser()
+        parser = ConfigParser()
         parser.read(config_filepath)
 
         if not 'combinations' in parser:

@@ -360,6 +360,14 @@ class NI_DAQmx(IntermediateDevice):
                     to trigger the start of acquisition. Please specify a parent_device
                     and clock_terminal for device %s"""
                 raise ValueError(dedent(msg) % self.name)
+            device.set_property(
+                'scale_factor', getattr(device, 'scale_factor', 1.0),
+                'connection_table_properties',
+            )
+            device.set_property(
+                'units', getattr(device, 'units', 'V'),
+                'connection_table_properties',
+            )
 
         IntermediateDevice.add_device(self, device)
 
