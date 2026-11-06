@@ -1,10 +1,6 @@
-from __future__ import division, unicode_literals, print_function, absolute_import
-#from labscript_utils import PY2
-#if PY2:
-#    str = unicode
-
 from labscript_devices import runviewer_parser, BLACS_tab
 from labscript import config, Device, IntermediateDevice, StaticAnalogQuantity, LabscriptError, set_passed_properties
+from labscript_utils.shared_drive import path_to_local
 import numpy as np
 import labscript_utils.h5_lock
 import h5py
@@ -264,8 +260,11 @@ class HP_8672ATab(DeviceTab):
         self.ramping_delay = float(newText)
 
     @define_state(MODE_MANUAL, True)
-    def transition_to_buffered(self, h5_file, notify_queue):
-        DeviceTab.transition_to_buffered(self, h5_file, notify_queue)
+    def transition_to_buffered(self, h5_filepath, notify_queue):
+        # for remote worker to find correct find path:
+        if getattr(self, 'is_remote', False):
+            h5_filepath = path_to_local(h5_filepath)
+        DeviceTab.transition_to_buffered(self, h5_filepath, notify_queue)
         # stop the auto ramping in buffered mode
         self.statemachine_timeout_remove(self.auto_ramp)
 
@@ -382,13 +381,13 @@ class HP_8672AWorker(GPIBWorker):
 
         if level_range_index is not None:
             # output level range: "K"+[0,1,2,3,4,5,6,7,8,9,:,;] for 0dBm,-10dBm...-110dBm , 10dBm stepsize
-            sendStr += "Z0K{:s}L3".format(level_range_index)
+            sendStr += "K{:s}".format(level_range_index)
 
         # send a message only if there is anything to send
         if len(sendStr) > 0:
             # Z0: Execute
             # N6: FM off
-            sendStr += "M0N6O1"
+            sendStr += "Z0N6"
             self.GPIB_connection.write(sendStr)
 
     def send_igor_frequency(self, frequency):
@@ -422,14 +421,17 @@ class HP_8672AWorker(GPIBWorker):
 
         return {}  # no need to adjust the values
 
-    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+    def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
+        # for remote worker to find correct find path:
+        if getattr(self, 'is_remote', False):
+            h5_filepath = path_to_local(h5_filepath)
         frequency = initial_values['frequency'] * 1e6  # convert to Hz
         if ENABLE_RANGE:
             level_range = initial_values['range']
         else:
             level_range = None
 
-        with h5py.File(h5file, 'r') as hdf5_file:
+        with h5py.File(h5_filepath, 'r') as hdf5_file:
             group = hdf5_file['devices/'][device_name]
             data = group.get('FREQUENCY_OUTPUT')
             frequency = data[0][0]  # in Hz

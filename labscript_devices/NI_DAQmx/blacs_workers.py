@@ -84,10 +84,6 @@ else:
 
 
 
-import zmq 
-from labscript_utils.labconfig import LabConfig
-
-
 class NI_DAQmxOutputWorker(Worker):
     def init(self):
 
@@ -687,7 +683,6 @@ class NI_DAQmxAcquisitionWorker(Worker):
 
     def shutdown(self):
         if self.task is not None:
-            self.socket.close()
             self.stop_task()
         self.socket.close()
         self.context.term()
@@ -716,11 +711,10 @@ class NI_DAQmxAcquisitionWorker(Worker):
                 # Append to the list of acquired data:
                 self.acquired_data.append(data)
             else:
-                if samples_read.value > 0:
-                    mean_value = np.mean(self.read_array[:samples_read.value,:], axis=0)
-                    for i, channel in enumerate(self.manual_mode_chans):
-                        self.socket.send_multipart(["{} {}\0".format(self.device_name,channel).encode('utf-8'), mean_value[i]]) # Only send mean for each channel
-                        # print("device_name", self.device_name, channel, np.mean(self.read_array, 0)[0])
+                # Send it to the broker
+                for i, channel in enumerate(self.manual_mode_chans):
+                    self.socket.send_multipart(["{} {}\0".format(self.device_name,channel).encode('utf-8'), np.mean(self.read_array, 0)[i]]) # Only send mean for each channel
+                    # print("device_name", self.device_name, channel, np.mean(self.read_array, 0)[0])
         return 0
 
     def start_task(self, chans, rate):
