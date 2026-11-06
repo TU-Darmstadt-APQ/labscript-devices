@@ -381,18 +381,60 @@ class PulseblasterNoDDSWorker(Worker):
             self.smart_cache['ready_to_go'] = True
             self.smart_cache['initial_values'] = initial_values
 
-            # create initial flags string
-            # NOTE: The spinapi can take a string or integer for flags.
-            # If it is a string:
-            #     flag: 0          12
-            #          '101100011111'
-            #
-            # If it is a binary number:
-            #     flag:12          0
-            #         0b111110001101
-            #
-            # Be warned!
-            initial_flags = ''
+                if self.programming_scheme == 'pb_start/BRANCH':
+                    # Line zero is a wait on the final state of the program in 'pb_start/BRANCH' mode 
+                    pb_inst_pbonly(flags,WAIT,0,100)
+                else:
+                    # Line zero otherwise just contains the initial flags 
+                    pb_inst_pbonly(initial_flags,CONTINUE,0,100)
+                                        
+                # Line one is a continue with the current front panel values:
+                pb_inst_pbonly(initial_flags, CONTINUE, 0, 100)
+                # Now the rest of the program:
+                if fresh or len(self.smart_cache['pulse_program']) != len(pulse_program) or \
+                (self.smart_cache['pulse_program'] != pulse_program).any():
+                    self.smart_cache['pulse_program'] = pulse_program
+                    for args in pulse_program:
+                        # pb_inst_pbonly(*args)
+
+                        ### DEBUG DELETE ####
+                        error = pb_inst_pbonly(*args)
+                        self.logger.info(f"Output: {error}")
+                        #####################
+                        
+                if self.programming_scheme == 'pb_start/BRANCH':
+                    # We will be triggered by pb_start() if we are are the master pseudoclock or a single hardware trigger
+                    # from the master if we are not:
+                    pb_stop_programming()
+                elif self.programming_scheme == 'pb_stop_programming/STOP':
+                    # Don't call pb_stop_programming(). We don't want to pulseblaster to respond to hardware
+                    # triggers (such as 50/60Hz line triggers) until we are ready to run.
+                    # Our start_method will call pb_stop_programming() when we are ready
+                    pass
+                else:
+                    raise ValueError('invalid programming_scheme %s'%str(self.programming_scheme))
+                    
+            elif self.programming_scheme == 'pb_stop_programming/STOP':
+                # Ensure start_programming called if the programming_scheme is 'pb_stop_programming/STOP'
+                # so we are ready to be triggered by a call to pb_stop_programming() 
+                # even if no programming occurred due to smart programming:
+                pb_start_programming(PULSE_PROGRAM)
+            
+            # Are there waits in use in this experiment? The monitor waiting for the end
+            # of the experiment will need to know:
+            wait_monitor_exists = bool(hdf5_file['waits'].attrs['wait_monitor_acquisition_device'])
+            waits_in_use = bool(len(hdf5_file['waits']))
+            self.waits_pending = wait_monitor_exists and waits_in_use
+            if waits_in_use and not wait_monitor_exists:
+                # This should be caught during labscript compilation, but just in case.
+                # having waits but not a wait monitor means we can't tell when the shot
+                # is over unless the shot ends in a STOP instruction:
+                assert self.programming_scheme == 'pb_stop_programming/STOP'
+            
+            # Now we build a dictionary of the final state to send back to the GUI:
+            return_values = {}
+            # Since we are converting from an integer to a binary string, we need to reverse the string! (see notes above when we create flags variables)
+            return_flags = str(bin(flags)[2:]).rjust(self.num_DO,'0')[::-1]
             for i in range(self.num_DO):
                 if initial_values['flag %d' % i]:
                     initial_flags += '1'

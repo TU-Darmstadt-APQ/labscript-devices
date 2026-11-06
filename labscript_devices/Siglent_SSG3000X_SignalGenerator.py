@@ -1,7 +1,4 @@
 from __future__ import division, unicode_literals, print_function, absolute_import
-# from labscript_utils import PY2
-# if PY2:
-#     str = unicode
 
 from labscript_devices import runviewer_parser, BLACS_tab
 from labscript import config, Device, IntermediateDevice, StaticAnalogQuantity, LabscriptError, set_passed_properties
@@ -14,9 +11,8 @@ import time
 
 ENABLE_RANGE = False
 
-# The Output-Frequency is the AM frequency!!!
-MIN_FREQUENCY = 1000  # in Hz
-MAX_FREQUENCY = 100000  # in Hz
+MIN_FREQUENCY = 100000  # in Hz
+MAX_FREQUENCY = 1000000000  # in Hz
 
 
 class Siglent_SSG3000X_SignalGenerator(IntermediateDevice):
@@ -24,13 +20,14 @@ class Siglent_SSG3000X_SignalGenerator(IntermediateDevice):
 
     description = 'Siglent synthesized signal generator'
 
-    def __init__(self, name, GPIB_address, **kwargs):
-        Device.__init__(self, name, None, 'GPIB', **kwargs)
+    def __init__(self, name, IP_address, **kwargs):
+        Device.__init__(self, name, None, 'IP', **kwargs)
 
         self.instructions = {}
 
-        self.GPIB_address = GPIB_address
-        self.BLACS_connection = self.GPIB_address
+        self.IP_address = IP_address
+
+        self.BLACS_connection = self.IP_address
 
     def add_device(self, output):
         # This device has 2 valid connection-ports: "freqeuncy" and "range"
@@ -47,7 +44,7 @@ class Siglent_SSG3000X_SignalGenerator(IntermediateDevice):
 
     def generate_code(self, hdf5_file):
         # do checks
-        output_frequency = 20000  # 3000000000# in Hz
+        output_frequency = 200000000  # 3000000000# in Hz
         output_range = -1
         output_ref = 1    # 1 == 'Int', 2 == 'Ext'
 
@@ -96,20 +93,20 @@ class Siglent_SSG3000X_SignalGeneratorTab(DeviceTab):
 
     def initialise_GUI(self):
         layout = self.get_tab_layout()
-        ui_filepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'HP_8672A.ui')
+        ui_filepath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'HP_8672A_test.ui')
         self.ui = UiLoader().load(ui_filepath)
         layout.addWidget(self.ui)
 
         # Auto ramping setup
         self.auto_ramping = False  # enable auto-ramping by default
-        self.ramping_step_size = 0.02  # kHz
+        self.ramping_step_size = 0.02  # MHz
         self.ramping_delay = 100  # ms
-        self.ramping_target_value = 190.000  # kHz
+        self.ramping_target_value = 190.000  # MHz
 
         # Capabilities
-        self.f_base_units = 'kHz'  # front panel values are in MHz!
-        self.f_base_min = MIN_FREQUENCY / 1E3  # 2000
-        self.f_base_max = MAX_FREQUENCY / 1E3  # 18000
+        self.f_base_units = 'MHz'  # front panel values are in MHz!
+        self.f_base_min = MIN_FREQUENCY / 1E6  # 2000
+        self.f_base_max = MAX_FREQUENCY / 1E6  # 18000
         self.f_base_step = 0.001  # step size for +/- buttons
         self.f_base_decimals = 6  # display 6 decimals accuracy
 
@@ -138,7 +135,7 @@ class Siglent_SSG3000X_SignalGeneratorTab(DeviceTab):
         self.ui.cb_auto_ramping.setCheckState(Qt.Checked if self.auto_ramping else Qt.Unchecked)
         self.ui.cb_auto_ramping.stateChanged.connect(self.onAutoRampChanged)
 
-        ramping_validator = QDoubleValidator(MIN_FREQUENCY / 1E3, MAX_FREQUENCY / 1E3, 3)  # MHz
+        ramping_validator = QDoubleValidator(MIN_FREQUENCY / 1E6, MAX_FREQUENCY / 1E6, 3)  # MHz
         self.ui.le_auto_ramping.setValidator(ramping_validator)
         self.ui.le_auto_ramping.setText(str(self.ramping_target_value))
         self.ui.le_auto_ramping.textChanged.connect(self.onRampingFrequencyChanged)
@@ -153,7 +150,7 @@ class Siglent_SSG3000X_SignalGeneratorTab(DeviceTab):
 
         connection_table_entry = self.settings['connection_table'].find_by_name(self.settings['device_name'])
 
-        self.GPIB_address = connection_table_entry.BLACS_connection
+        self.IP_address = connection_table_entry.BLACS_connection
 
         if self.auto_ramping:  # if ramping is enabled, start the 'timer' for auto-ramping
             self.statemachine_timeout_add(self.ramping_delay, self.auto_ramp)  # every tick call auto_ramp()
@@ -243,15 +240,15 @@ class Siglent_SSG3000X_SignalGeneratorTab(DeviceTab):
             self.delay_ramping_counter = 0  # reset ramping delay counter if a shot ends, to prevent back ramping in a shot qequence
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address}
+        worker_initialisation_kwargs = {'IP_address': self.IP_address}
         self.create_worker("main_worker", RS_SignalGeneratorWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
 
-from labscript_devices.GPIBDevice import GPIBWorker
+from labscript_devices.EthernetDevice import SocketWorker
 
 
-class RS_SignalGeneratorWorker(GPIBWorker):
+class RS_SignalGeneratorWorker(SocketWorker):
 
     def send_frequency(self, frequency=None, ref=1):
         # update the synthesizer with the given frequency.
@@ -259,43 +256,39 @@ class RS_SignalGeneratorWorker(GPIBWorker):
         if ref == 2:
             frequency = int(frequency)  # cast frequency to int!
             # frequency in Hz!!
+            sendStr = "REF:EXT"  # Use external Reference
             self.send_string(sendStr)
 
             if frequency < MIN_FREQUENCY or frequency > MAX_FREQUENCY:
                 raise Exception("Frequency {:d} is out of range {:d} - {:d}. Is the frequency in Hz?".format(frequency, MIN_FREQUENCY, MAX_FREQUENCY))
 
         if frequency is not None:
-            sendStr = "AM:FREQ " + str(frequency) + " kHz"  # Send AM Frequency!
+            sendStr = "FREQ " + str(frequency) + " MHz\r\n"
             self.send_string(sendStr)
 
     def program_manual(self, front_panel_values):
-        frequ = front_panel_values['frequency']  # in kHz!
+        frequ = front_panel_values['frequency']  # in MHz!
         # refSignal = front_panel_values['ref']  # Int or Ext ref signal
-        self.send_frequency(frequ)  # , refSignal)  # still in kHz
-        self.send_string('FREQ 90 MHZ')
-        self.send_string('OUTP ON')
-        self.send_string('AM:STAT ON')
-        self.send_string('AM:WAVE SINE')
-        self.send_string('AM:DEPT 0.2')
-        self.send_string('MOD ON')
+        self.send_frequency(frequ)#, refSignal)  # still in MHz
 
         return {}  # no need to adjust the values
 
     def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         frequency = initial_values['frequency']
-        # refSignal = initial_values['ref']   # Int or Ext ref signal
+        #refSignal = initial_values['ref']   # Int or Ext ref signal
 
         with h5py.File(h5file, 'r') as hdf5_file:
             group = hdf5_file['devices/'][device_name]
             data = group.get('FREQUENCY_OUTPUT')
             frequency = data[0][0]  # in Hz
 
-        self.send_frequency(frequency / 1e3)  # , refSignal)
+        self.send_frequency(frequency/1e6)#, refSignal)
 
-        return {'frequency': frequency / 1e3}
+        return {'frequency': frequency / 1e6}
 
     def send_string(self, string):
-        self.GPIB_connection.write(string)
+        print(string)
+        self.socket.sendall(string.encode('utf-8'))
         time.sleep(.300)
 
 

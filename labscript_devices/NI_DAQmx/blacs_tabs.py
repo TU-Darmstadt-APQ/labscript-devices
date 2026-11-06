@@ -18,10 +18,14 @@ import os
 
 from blacs.device_base_class import DeviceTab
 from .utils import split_conn_AO, split_conn_DO
+#from .analog_input_plot import NIAnalogInputPlotWindow
 from . import models
 import warnings
 
-from configparser import SafeConfigParser
+import os
+
+from configparser import ConfigParser
+from qtutils import inmain_decorator
 from qtutils.qt.QtCore import *
 from qtutils.qt.QtGui import *
 from qtutils.qt.QtWidgets import *
@@ -59,7 +63,7 @@ class NI_DAQmxTab(DeviceTab):
         if not os.path.exists(config_filepath):
             return {}  # the file does not exist, so no combinations exist
 
-        parser = SafeConfigParser()
+        parser = ConfigParser()
         parser.read(config_filepath)
 
         if not 'combinations' in parser:
@@ -90,32 +94,34 @@ class NI_DAQmxTab(DeviceTab):
         return combis
 
     def replace_connection_name_with_hardware_name(self, state_list, DO_list):  # added by RK
-        result = []
-        for con_name, state in state_list:
-            for hw_name, do_item in DO_list.items():
-                if do_item._connection_name == con_name:
-                    result.append((hw_name, state))
-                    break
-        return result
+            result = []
+            for con_name, state in state_list:
+                for hw_name, do_item in DO_list.items():
+                    if do_item._connection_name == con_name:
+                        result.append((hw_name, state))
+                        break
+            return result
+    
 
     def initialise_combinations_buttons(self):
-        path = os.path.dirname(self.exp_config.get('paths', 'connection_table_py'))
-        self.combinations = self.load_output_combinations(path)
-        if self.combinations:  # if it's not empty
-            favorit_group = QWidget()
-            toolpalettegroup = ToolPaletteGroup(favorit_group)
-            toolpalette = toolpalettegroup.append_new_palette("Combinations")
-            for key, value in self.combinations.items():
-                replaced_value = self.replace_connection_name_with_hardware_name(value, self._DO)
-                btn = MyCombiButton(key, self, replaced_value)
-                btn.setCheckable(True)
-                self.combi_btns.append(btn)
-                toolpalette.addWidget(btn, True)
+            path = os.path.dirname(self.exp_config.get('paths', 'connection_table_py'))
+            self.combinations = self.load_output_combinations(path)
+            if self.combinations:  # if it's not empty
+                favorit_group = QWidget()
+                toolpalettegroup = ToolPaletteGroup(favorit_group)
+                toolpalette = toolpalettegroup.append_new_palette("Combinations")
+                for key, value in self.combinations.items():
+                    replaced_value = self.replace_connection_name_with_hardware_name(value, self._DO)
+                    btn = MyCombiButton(key, self, replaced_value)
+                    btn.setCheckable(True)
+                    self.combi_btns.append(btn)
+                    toolpalette.addWidget(btn, True)
+    
+                # add widgets for the combinations
+                layout = self.get_tab_layout()
+                layout.addWidget(favorit_group)
+                layout.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.MinimumExpanding))
 
-            # add widgets for the combinations
-            layout = self.get_tab_layout()
-            layout.addWidget(favorit_group)
-            layout.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.MinimumExpanding))
 
     def initialise_GUI(self):
         # Get capabilities from connection table properties:
@@ -202,7 +208,7 @@ class NI_DAQmxTab(DeviceTab):
         self.create_analog_inputs(ai_prop)
 
         # Create widgets for outputs defined so far (i.e. analog outputs only)
-        DDS_widgets, AO_widgets, DO_widgets, AI_widgets = self.auto_create_widgets(create_analog_in=True)
+        DDS_widgets, AO_widgets, DO_widgets, AI_widgets = self.auto_create_widgets(create_analog_in = True)
 
         # now create the digital output objects one port at a time
         for _, DO_prop in DO_proplist:
@@ -215,9 +221,9 @@ class NI_DAQmxTab(DeviceTab):
             DO_widgets_by_port[port_str] = self.create_digital_widgets(DO_prop)
 
         def ai_sort(channel):
-            flag = channel.replace('ai', '')
-            flag = int(flag)
-            return '%02d' % flag
+                    flag = channel.replace('ai', '')
+                    flag = int(flag)
+                    return '%02d' % flag
 
         # Auto place the widgets in the UI, specifying sort keys for ordering them:
         widget_list = [("Analog Inputs", AI_widgets, ai_sort), ("Analog outputs", AO_widgets, split_conn_AO)]

@@ -1,9 +1,11 @@
+from __future__ import division, unicode_literals, print_function, absolute_import
+
 from labscript_devices import runviewer_parser, BLACS_tab
 from labscript import config, Device, IntermediateDevice, StaticAnalogQuantity, LabscriptError, set_passed_properties
-from labscript_utils.shared_drive import path_to_local
 import numpy as np
 import labscript_utils.h5_lock
 import h5py
+import time
 
 
 ENABLE_RANGE = False
@@ -17,13 +19,17 @@ class RS_SignalGenerator(IntermediateDevice):
 
     description = 'Rohde and Schwarz synthesized signal generator'
 
-    def __init__(self, name, GPIB_address, **kwargs):
+    def __init__(self, name, GPIB_address = None, IP_address = None, **kwargs):
         Device.__init__(self, name, None, 'GPIB', **kwargs)
 
         self.instructions = {}
 
-        self.GPIB_address = GPIB_address
-        self.BLACS_connection = self.GPIB_address
+        if IP_address is not None:
+            self.IP_address = IP_address
+            self.BLACS_connection = self.IP_address
+        else:
+            self.GPIB_address = GPIB_address
+            self.BLACS_connection = self.GPIB_address
 
     def add_device(self, output):
         # This device has 2 valid connection-ports: "freqeuncy" and "range"
@@ -32,8 +38,8 @@ class RS_SignalGenerator(IntermediateDevice):
             if output.connection == dev.connection:
                 # e.g.: only one frequency AnalogQuantitiy is allowed
                 raise LabscriptError("Cannot add more than 1 output to {:s} on the same connection {:s}".format(self.name, output.connection))
-        if not output.connection in ("frequency", "range"):
-            raise LabscriptError("Cannot attach '{:s}' to '{:s}'. The connection must be a valid value. ({:s})".format(output.name, self.name, "frequency, range"))
+        if not output.connection in ("frequency", "range", "ref"):
+            raise LabscriptError("Cannot attach '{:s}' to '{:s}'. The connection must be a valid value. ({:s})".format(output.name, self.name, "frequency, range, ref"))
         if not ENABLE_RANGE and output.connection == "range":
             raise LabscriptError("Cannot attach '{:s}' to '{:s}' on port 'range'. Range is disabled.".format(output.name, self.name))
         IntermediateDevice.add_device(self, output)
@@ -42,6 +48,7 @@ class RS_SignalGenerator(IntermediateDevice):
         # do checks
         output_frequency = 200000000  # 3000000000# in Hz
         output_range = -1
+        output_ref = 1    # 1 == 'Int', 2 == 'Ext'
 
         # iterate through the conneted child devices
         for dev in self.child_devices:
@@ -49,6 +56,10 @@ class RS_SignalGenerator(IntermediateDevice):
                 output_frequency = dev.static_value
             elif dev.connection == 'range':
                 output_range = dev.static_value
+            elif dev.connection == 'ref':       # int/ ext ref signal source
+                output_ref = dev.static_value
+
+        # checks
         if output_frequency < MIN_FREQUENCY:
             raise LabscriptError("The frequency specified for {:s} is smaller than {:d}Hz".format(self.name, MIN_FREQUENCY))
         elif output_frequency > MAX_FREQUENCY:
@@ -141,6 +152,11 @@ class RS_SignalGeneratorTab(DeviceTab):
 
         connection_table_entry = self.settings['connection_table'].find_by_name(self.settings['device_name'])
         self.GPIB_address = connection_table_entry.BLACS_connection
+        if self.GPIB_address[0] != 'G':
+            self.IP_address = self.GPIB_address
+        else:
+            self.IP_address = None
+
 
         if self.auto_ramping:  # if ramping is enabled, start the 'timer' for auto-ramping
             self.statemachine_timeout_add(self.ramping_delay, self.auto_ramp)  # every tick call auto_ramp()
@@ -216,12 +232,8 @@ class RS_SignalGeneratorTab(DeviceTab):
         self.ramping_delay = float(newText)
 
     @define_state(MODE_MANUAL, True)
-    def transition_to_buffered(self, h5_filepath, notify_queue):
-        # for remote worker to find correct find path:
-        if getattr(self, 'is_remote', False):
-            h5_filepath = path_to_local(h5_filepath)
-
-        DeviceTab.transition_to_buffered(self, h5_filepath, notify_queue)
+    def transition_to_buffered(self, h5_file, notify_queue):
+        DeviceTab.transition_to_buffered(self, h5_file, notify_queue)
         # stop the auto ramping in buffered mode
         self.statemachine_timeout_remove(self.auto_ramp)
 
@@ -234,22 +246,98 @@ class RS_SignalGeneratorTab(DeviceTab):
             self.delay_ramping_counter = 0  # reset ramping delay counter if a shot ends, to prevent back ramping in a shot qequence
 
     def initialise_workers(self):
-        worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address}
-        self.create_worker("main_worker", RS_SignalGeneratorWorker, worker_initialisation_kwargs)
+        if self.IP_address is not None:
+            worker_initialisation_kwargs = {'IP_address': self.IP_address}
+            self.create_worker("main_worker", RS_SignalGeneratorWorker_socket, worker_initialisation_kwargs)
+        else:
+            worker_initialisation_kwargs = {'GPIB_address': self.GPIB_address}
+            self.create_worker("main_worker", RS_SignalGeneratorWorker, worker_initialisation_kwargs)
         self.primary_worker = "main_worker"
 
 
 from labscript_devices.GPIBDevice import GPIBWorker
+from labscript_devices.EthernetDevice import SocketWorker
 
+class RS_SignalGeneratorWorker_socket(SocketWorker):
+
+    def send_frequency(self, frequency=None, ref=2):
+        # update the synthesizer with the given frequency.
+        # If an argument is None, the corresponding value will not be changed
+        # if ref == 2:
+        #     frequency = int(frequency)  # cast frequency to int!
+        #     # frequency in Hz!!
+        #     sendStr = "REF:EXT"  # Use external Reference
+        #     self.send_string(sendStr)
+
+        if frequency*1e6 < MIN_FREQUENCY or frequency*1e6 > MAX_FREQUENCY:
+            raise Exception("Frequency {:.2f} is out of range {:.2f} - {:.2f}. Is the frequency in Hz?".format(frequency, MIN_FREQUENCY, MAX_FREQUENCY))
+
+        if frequency is not None:
+            sendStr = "FREQ " + str(frequency) + " MHz\r\n"
+            self.send_string(sendStr)
+
+    def program_manual(self, front_panel_values):
+        frequ = front_panel_values['frequency']  # in MHz!
+        print(frequ)
+        if frequ < 180: # If frequency 0 is typed, a negative frequency is sent
+            frequ = 190
+        # refSignal = front_panel_values['ref']  # Int or Ext ref signal
+
+        self.send_frequency(frequ)#, refSignal)  # still in MHz
+
+        return {}  # no need to adjust the values
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
+        from ast import literal_eval
+
+        useListMode = False
+        if (useListMode) and (device_name == 'Raman_Frequency_Synth'):
+            # List mode
+            # Read frequencies from global data
+            with h5py.File(h5file, 'r') as hdf5_file:
+                group = hdf5_file['globals']
+                frequencies = group.attrs['raman_mf0_state_prep_frequencies']
+            # Send frequency list to synthesizer
+            print("to_buffered")
+            self.send_string('SOUR1:LIST:SEL "List"\r\n')
+            freq_lst = [str(freq) + ' MHz, ' for freq in frequencies]
+            level_lst = [str(2) + ' dBm, ' for num in frequencies]
+            send_str = 'SOUR1:LIST:FREQ ' + ("".join(freq_lst))[:-2] + '\r\n'
+            print(send_str)
+            self.send_string(send_str)
+            send_str = 'SOUR1:List:POW ' + ("".join(level_lst))[:-2] + '\r\n'
+            print(send_str)
+            self.send_string(send_str)
+            self.send_string("SOUR1:LIST:MODE STEP\r\n")
+            self.send_string("SOUR1:LIST:TRIG:SOUR EXT\r\n")
+            self.send_string("SOUR1:FREQ:MODE LIST\r\n")
+
+            #refSignal = initial_values['ref']   # Int or Ext ref signal
+        else:
+            with h5py.File(h5file, 'r') as hdf5_file:
+                group = hdf5_file['devices/'][device_name]
+                data = group.get('FREQUENCY_OUTPUT')
+                frequency = data[0][0]  # in Hz
+            print(frequency)
+            self.send_frequency(frequency/1e6)#, refSignal)
+
+        frequency = initial_values['frequency']* 1e6
+        print(frequency)
+        return {'frequency': frequency / 1e6}
+
+    def send_string(self, string):
+        self.socket.sendall(string.encode('utf-8'))
+        time.sleep(.300)
 
 class RS_SignalGeneratorWorker(GPIBWorker):
 
-    def send_GPIB_frequency(self, frequency=None):
+    def send_GPIB_frequency(self, frequency=None, ref=2):
         # update the synthesizer with the given frequency.
         # If an argument is None, the corresponding value will not be changed
-        if frequency is not None:
+        if ref == 2:
             frequency = int(frequency)  # cast frequency to int!
             # frequency in Hz!!
+            sendStr = "REF:EXT"  # Use external Reference
+            self.GPIB_connection.write(sendStr)
 
             if frequency < MIN_FREQUENCY or frequency > MAX_FREQUENCY:
                 raise Exception("Frequency {:d} is out of range {:d} - {:d}. Is the frequency in Hz?".format(frequency, MIN_FREQUENCY, MAX_FREQUENCY))
@@ -262,24 +350,23 @@ class RS_SignalGeneratorWorker(GPIBWorker):
 
     def program_manual(self, front_panel_values):
         frequ = front_panel_values['frequency']  # in MHz!
+        # refSignal = front_panel_values['ref']  # Int or Ext ref signal
+        print(frequ)
 
-        self.send_GPIB_frequency(frequ * 1E6)  # convert MHz to Hz
+        self.send_GPIB_frequency(frequ * 1E6, refSignal)  # convert MHz to Hz
 
         return {}  # no need to adjust the values
 
-    def transition_to_buffered(self, device_name, h5_filepath, initial_values, fresh):
-        # for remote worker to find correct find path:
-        if getattr(self, 'is_remote', False):
-            h5_filepath = path_to_local(h5_filepath)
-
+    def transition_to_buffered(self, device_name, h5file, initial_values, fresh):
         frequency = initial_values['frequency'] * 1e6  # convert to Hz
+        refSignal = initial_values['ref']   # Int or Ext ref signal
 
-        with h5py.File(h5_filepath, 'r') as hdf5_file:
+        with h5py.File(h5file, 'r') as hdf5_file:
             group = hdf5_file['devices/'][device_name]
             data = group.get('FREQUENCY_OUTPUT')
             frequency = data[0][0]  # in Hz
 
-        self.send_GPIB_frequency(frequency)
+        self.send_GPIB_frequency(frequency, refSignal)
 
         return {'frequency': frequency / 1e6}
 

@@ -15,9 +15,11 @@ class SocketWorker(Worker):
 
         self.socket = None
         self.Host = self.IP_address.split("::")[0]
-        self.Port = 5025#self.IP_address.split("::")[1]
+        self.Port = int(self.IP_address.split("::")[1]) #5025
+
 
         self.init_Connection()
+
 
     def init_Connection(self):
 
