@@ -40,7 +40,7 @@ from user_devices.GPIB_Adapter.gpib_worker import GPIBWorker
 max_no_of_outputs = 4
 Watt_ratings = [25, 25, 50, 50]
 voltage_decimals = 2
-current_decimals = 3
+current_decimals = 5
 eos_strategy : EosStrategy = EosStrategy.LF
 
 # DC Output Range Specifications
