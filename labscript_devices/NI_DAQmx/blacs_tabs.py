@@ -16,9 +16,9 @@ from labscript_utils import dedent
 import json
 import os
 import threading
+from zprocess import Process
 
 from blacs.device_base_class import DeviceTab
-from labscript_devices.NI_DAQmx.analog_input_plot import NIAnalogInputPlotWindow
 from labscript_devices.NI_DAQmx.utils import split_conn_AO, split_conn_DO
 from labscript_devices.NI_DAQmx import models
 import warnings
@@ -113,12 +113,17 @@ class NI_DAQmxTab(DeviceTab):
         display = self._ai_displays[channel]
         widget = display['widget']
         if widget.win is None:
-            widget.win = NIAnalogInputPlotWindow()
-            widget.to_child, widget.from_child = widget.win.start(
+            # A direct subclass start can put NI_DAQmx/labscript_devices.py ahead
+            # of the labscript_devices package on older zprocess versions.
+            plot = Process(subclass_fullname=(
+                'labscript_devices.NI_DAQmx.analog_input_plot.NIAnalogInputPlotWindow'
+            ))
+            widget.to_child, widget.from_child = plot.start(
                 widget._connection_name, channel, self.device_name,
                 display['scale_factor'], display['units'],
                 self._ai_show_volts.isChecked(),
             )
+            widget.win = plot
             threading.Thread(target=widget._check_plot_window, daemon=True).start()
         else:
             widget.to_child.put('focus')
