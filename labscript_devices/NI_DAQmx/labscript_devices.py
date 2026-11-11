@@ -28,7 +28,7 @@ from labscript import (
     set_passed_properties,
 )
 from labscript_utils import dedent
-from .utils import split_conn_DO, split_conn_AO, split_conn_AI
+from labscript_devices.NI_DAQmx.utils import split_conn_DO, split_conn_AO, split_conn_AI
 import numpy as np
 import warnings
 

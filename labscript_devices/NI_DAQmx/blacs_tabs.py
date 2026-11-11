@@ -18,9 +18,9 @@ import os
 import threading
 
 from blacs.device_base_class import DeviceTab
-from .analog_input_plot import NIAnalogInputPlotWindow
-from .utils import split_conn_AO, split_conn_DO
-from . import models
+from labscript_devices.NI_DAQmx.analog_input_plot import NIAnalogInputPlotWindow
+from labscript_devices.NI_DAQmx.utils import split_conn_AO, split_conn_DO
+from labscript_devices.NI_DAQmx import models
 import warnings
 
 from configparser import ConfigParser
@@ -77,6 +77,7 @@ class NI_DAQmxTab(DeviceTab):
                 'scale_factor': properties.get('scale_factor', 1.0),
                 'units': 'V' if units == 'Volts' else units,
             }
+            # print(display)
             self._ai_displays[channel] = display
 
             @inmain_decorator(True)
