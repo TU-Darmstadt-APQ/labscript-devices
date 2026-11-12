@@ -21,7 +21,8 @@ from .utils import split_conn_AO, split_conn_DO
 from . import models
 import warnings
 
-from configparser import SafeConfigParser
+from configparser import ConfigParser
+from qtutils import inmain_decorator
 from qtutils.qt.QtCore import *
 from qtutils.qt.QtGui import *
 from qtutils.qt.QtWidgets import *
@@ -59,7 +60,7 @@ class NI_DAQmxTab(DeviceTab):
         if not os.path.exists(config_filepath):
             return {}  # the file does not exist, so no combinations exist
 
-        parser = SafeConfigParser()
+        parser = ConfigParser()
         parser.read(config_filepath)
 
         if not 'combinations' in parser:
@@ -90,32 +91,34 @@ class NI_DAQmxTab(DeviceTab):
         return combis
 
     def replace_connection_name_with_hardware_name(self, state_list, DO_list):  # added by RK
-        result = []
-        for con_name, state in state_list:
-            for hw_name, do_item in DO_list.items():
-                if do_item._connection_name == con_name:
-                    result.append((hw_name, state))
-                    break
-        return result
+            result = []
+            for con_name, state in state_list:
+                for hw_name, do_item in DO_list.items():
+                    if do_item._connection_name == con_name:
+                        result.append((hw_name, state))
+                        break
+            return result
+    
 
     def initialise_combinations_buttons(self):
-        path = os.path.dirname(self.exp_config.get('paths', 'connection_table_py'))
-        self.combinations = self.load_output_combinations(path)
-        if self.combinations:  # if it's not empty
-            favorit_group = QWidget()
-            toolpalettegroup = ToolPaletteGroup(favorit_group)
-            toolpalette = toolpalettegroup.append_new_palette("Combinations")
-            for key, value in self.combinations.items():
-                replaced_value = self.replace_connection_name_with_hardware_name(value, self._DO)
-                btn = MyCombiButton(key, self, replaced_value)
-                btn.setCheckable(True)
-                self.combi_btns.append(btn)
-                toolpalette.addWidget(btn, True)
+            path = os.path.dirname(self.exp_config.get('paths', 'connection_table_py'))
+            self.combinations = self.load_output_combinations(path)
+            if self.combinations:  # if it's not empty
+                favorit_group = QWidget()
+                toolpalettegroup = ToolPaletteGroup(favorit_group)
+                toolpalette = toolpalettegroup.append_new_palette("Combinations")
+                for key, value in self.combinations.items():
+                    replaced_value = self.replace_connection_name_with_hardware_name(value, self._DO)
+                    btn = MyCombiButton(key, self, replaced_value)
+                    btn.setCheckable(True)
+                    self.combi_btns.append(btn)
+                    toolpalette.addWidget(btn, True)
+    
+                # add widgets for the combinations
+                layout = self.get_tab_layout()
+                layout.addWidget(favorit_group)
+                layout.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.MinimumExpanding))
 
-            # add widgets for the combinations
-            layout = self.get_tab_layout()
-            layout.addWidget(favorit_group)
-            layout.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.MinimumExpanding))
 
     def initialise_GUI(self):
         # Get capabilities from connection table properties:
@@ -162,6 +165,8 @@ class NI_DAQmxTab(DeviceTab):
 
         clock_terminal = properties['clock_terminal']
         clock_mirror_terminal = properties['clock_mirror_terminal']
+        # get to avoid error on older connection tables
+        connected_terminals = properties.get('connected_terminals', None)
         static_AO = properties['static_AO']
         static_DO = properties['static_DO']
         clock_limit = properties['clock_limit']
@@ -189,7 +194,7 @@ class NI_DAQmxTab(DeviceTab):
         DO_proplist = []
         DO_hardware_names = []
         for port_num in range(len(ports)):
-            port_str = 'port%d' % port_num
+            port_str ='port%d' % port_num
             port_props = {}
             for line in range(ports[port_str]['num_lines']):
                 hardware_name = 'port%d/line%d' % (port_num, line)
@@ -202,7 +207,7 @@ class NI_DAQmxTab(DeviceTab):
         self.create_analog_inputs(ai_prop)
 
         # Create widgets for outputs defined so far (i.e. analog outputs only)
-        DDS_widgets, AO_widgets, DO_widgets, AI_widgets = self.auto_create_widgets(create_analog_in=True)
+        DDS_widgets, AO_widgets, DO_widgets, AI_widgets = self.auto_create_widgets(create_analog_in = True)
 
         # now create the digital output objects one port at a time
         for _, DO_prop in DO_proplist:
@@ -215,14 +220,14 @@ class NI_DAQmxTab(DeviceTab):
             DO_widgets_by_port[port_str] = self.create_digital_widgets(DO_prop)
 
         def ai_sort(channel):
-            flag = channel.replace('ai', '')
-            flag = int(flag)
-            return '%02d' % flag
+                    flag = channel.replace('ai', '')
+                    flag = int(flag)
+                    return '%02d' % flag
 
         # Auto place the widgets in the UI, specifying sort keys for ordering them:
         widget_list = [("Analog Inputs", AI_widgets, ai_sort), ("Analog outputs", AO_widgets, split_conn_AO)]
         for port_num in range(len(ports)):
-            port_str = 'port%d' % port_num
+            port_str ='port%d' % port_num
             DO_widgets = DO_widgets_by_port[port_str]
             name = "Digital outputs: %s" % port_str
             if ports[port_str]['supports_buffered']:
@@ -244,17 +249,13 @@ class NI_DAQmxTab(DeviceTab):
                 timeout_trigger_type = waits.attrs['wait_monitor_timeout_trigger_type']
             except KeyError:
                 timeout_trigger_type = 'rising'
-            jumps = f['jumps']
-            jump_device = jumps.attrs['jump_device']
 
         # Create and set the primary worker
         self.create_worker(
             "main_worker",
             'labscript_devices.NI_DAQmx.blacs_workers.NI_DAQmxOutputWorker',
             {
-                'name': self.device_name + '_main',
                 'MAX_name': self.MAX_name,
-                'jump_address': str(self.settings['connection_table'].jump_device_address),
                 'Vmin': AO_base_min,
                 'Vmax': AO_base_max,
                 'num_AO': num_AO,
@@ -288,9 +289,7 @@ class NI_DAQmxTab(DeviceTab):
                 "wait_monitor_worker",
                 'labscript_devices.NI_DAQmx.blacs_workers.NI_DAQmxWaitMonitorWorker',
                 {
-                    'name': self.device_name + '_wait',
                     'MAX_name': self.MAX_name,
-                    'jump_address': str(self.settings['connection_table'].jump_device_address),
                     'wait_acq_connection': wait_acq_connection,
                     'wait_timeout_MAX_name': wait_timeout_MAX_name,
                     'wait_timeout_connection': wait_timeout_connection,
@@ -310,15 +309,15 @@ class NI_DAQmxTab(DeviceTab):
                 "acquisition_worker",
                 'labscript_devices.NI_DAQmx.blacs_workers.NI_DAQmxAcquisitionWorker',
                 {
-                    'name': self.device_name + '_acqusition',
                     'MAX_name': self.MAX_name,
-                    'jump_address': str(self.settings['connection_table'].jump_device_address),
                     'num_AI': num_AI,
                     'AI_chans': AI_chans,
                     'AI_term': properties['AI_term'],
                     'AI_range': properties['AI_range'],
                     'AI_start_delay': properties['AI_start_delay'],
                     'AI_start_delay_ticks': properties['AI_start_delay_ticks'],
+                    #'AI_timebase_terminal': properties.get('AI_timebase_terminal',None),
+                    #'AI_timebase_rate': properties.get('AI_timebase_rate',None),
                     'clock_terminal': clock_terminal,
                 },
             )

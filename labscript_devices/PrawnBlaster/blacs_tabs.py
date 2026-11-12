@@ -99,7 +99,6 @@ class PrawnBlasterTab(DeviceTab):
         )
 
         worker_initialisation_kwargs = {
-            "jump_address": str(self.settings["connection_table"].jump_device_address),
             "com_port": com_port,
             "num_pseudoclocks": self.connection_table_properties["num_pseudoclocks"],
             "out_pins": self.connection_table_properties["out_pins"],
@@ -156,6 +155,6 @@ class PrawnBlasterTab(DeviceTab):
         """When used as the primary Pseudoclock, this starts the run."""
 
         self.statemachine_timeout_remove(self.status_monitor)
-        # yield (self.queue_work(self.primary_worker, "start_run"))
+        yield (self.queue_work(self.primary_worker, "start_run"))
         self.status_monitor()
         self.statemachine_timeout_add(100, self.status_monitor, notify_queue)

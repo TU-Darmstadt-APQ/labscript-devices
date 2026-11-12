@@ -55,6 +55,7 @@ class Spinnaker_Camera(object):
 
         # Set the abort acquisition thingy:
         self._abort_acquisition = False
+        self.exception_on_failed_shot = True
 
     def get_attribute_names(self, visibility):
         names = []
@@ -197,11 +198,14 @@ class Spinnaker_Camera(object):
             self.set_stream_attribute('StreamBufferHandlingMode', 'NewestFirst')
             self.set_attribute('AcquisitionMode', 'Continuous')
         elif bufferCount == 1:
-            self.set_stream_attribute('StreamBufferCountMode', 'Auto')
+            # The StreamBufferCountMode originally was set to 'Auto', but this feature was depreciated by Spinnaker version 3.0.0.118
+            self.set_stream_attribute('StreamBufferCountMode', 'Manual')
+            self.set_stream_attribute('StreamBufferCountManual', 1)
             self.set_stream_attribute('StreamBufferHandlingMode', 'OldestFirst')
             self.set_attribute('AcquisitionMode', 'SingleFrame')
         else:
-            self.set_stream_attribute('StreamBufferCountMode', 'Auto')
+            self.set_stream_attribute('StreamBufferCountMode', 'Manual')
+            self.set_stream_attribute('StreamBufferCountManual', bufferCount)
             self.set_stream_attribute('StreamBufferHandlingMode', 'OldestFirst')
             self.set_attribute('AcquisitionMode', 'MultiFrame')
             self.set_attribute('AcquisitionFrameCount', bufferCount)

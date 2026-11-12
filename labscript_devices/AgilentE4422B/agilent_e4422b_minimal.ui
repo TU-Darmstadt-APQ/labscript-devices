@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AgilentE4422BMinimal</class>
+ <widget class="QWidget" name="AgilentE4422BMinimal">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>444</width>
+    <height>429</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Agilent E4422B RF Control</string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing">
+    <number>12</number>
+   </property>
+   <property name="leftMargin">
+    <number>12</number>
+   </property>
+   <property name="topMargin">
+    <number>12</number>
+   </property>
+   <property name="rightMargin">
+    <number>12</number>
+   </property>
+   <property name="bottomMargin">
+    <number>12</number>
+   </property>
+   <item>
+    <widget class="QGroupBox" name="groupDesiredSettings">
+     <property name="font">
+      <font>
+       <pointsize>8</pointsize>
+      </font>
+     </property>
+     <property name="title">
+      <string>Desired Settings</string>
+     </property>
+     <property name="flat">
+      <bool>false</bool>
+     </property>
+     <layout class="QGridLayout" name="desiredSettingsLayout">
+      <property name="spacing">
+       <number>8</number>
+      </property>
+      <item row="1" column="1">
+       <widget class="QDoubleSpinBox" name="spinPowerDbm">
+        <property name="decimals">
+         <number>2</number>
+        </property>
+        <property name="minimum">
+         <double>-136.000000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>7.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>1.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>-10.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0" colspan="2">
+       <widget class="QLabel" name="labelApplyInfo">
+        <property name="styleSheet">
+         <string>color: #555555;</string>
+        </property>
+        <property name="text">
+         <string>Edited values are not sent to the device until Apply is pressed.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelFrequencySet">
+        <property name="text">
+         <string>Frequency [MHz]</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelPowerSet">
+        <property name="text">
+         <string>Power [dBm]</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QDoubleSpinBox" name="spinFrequencyMHz">
+        <property name="toolTip">
+         <string>Valid range: 0.250 MHz to 4000 MHz.</string>
+        </property>
+        <property name="decimals">
+         <number>3</number>
+        </property>
+        <property name="minimum">
+         <double>0.250000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>4000.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>1.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>100.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QPushButton" name="buttonApply">
+        <property name="toolTip">
+         <string>Sends frequency and power to the device. Does not turn RF output on or off.</string>
+        </property>
+        <property name="text">
+         <string>Apply to device</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="rfButtonLayout">
+     <item>
+      <widget class="QPushButton" name="buttonRfOn">
+       <property name="toolTip">
+        <string>Turns RF output on using the current device settings.</string>
+       </property>
+       <property name="text">
+        <string>RF ON</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="buttonRfOff">
+       <property name="toolTip">
+        <string>Turns RF output off. Frequency and power settings are not changed.</string>
+       </property>
+       <property name="text">
+        <string>RF OFF</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupDeviceState">
+     <property name="title">
+      <string>Device State</string>
+     </property>
+     <layout class="QGridLayout" name="deviceStateLayout">
+      <property name="spacing">
+       <number>8</number>
+      </property>
+      <item row="3" column="1">
+       <widget class="QLabel" name="labelRfReadback">
+        <property name="text">
+         <string>---</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLabel" name="labelPowerReadback">
+        <property name="text">
+         <string>---</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0" colspan="2">
+       <widget class="QPushButton" name="buttonReadDevice">
+        <property name="toolTip">
+         <string>Reads actual frequency, power, and RF output state from the device.</string>
+        </property>
+        <property name="text">
+         <string>Read from device</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="labelFrequencyReadback">
+        <property name="text">
+         <string>---</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="labelRfReadbackName">
+        <property name="text">
+         <string>RF Output</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelFrequencyReadbackName">
+        <property name="text">
+         <string>Frequency</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="labelPowerReadbackName">
+        <property name="text">
+         <string>Power</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

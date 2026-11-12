@@ -11,7 +11,7 @@
 #                                                                   #
 #####################################################################
 
-__version__ = '1.1.0'
+__version__ = '1.2.0'
 
 
 from labscript import (
@@ -58,11 +58,14 @@ class NI_DAQmx(IntermediateDevice):
                 "static_AO",
                 "static_DO",
                 "clock_mirror_terminal",
+                "connected_terminals",
                 "AI_range",
                 "AI_start_delay",
                 "AI_start_delay_ticks",
                 "AI_term",
                 "AI_chans",
+                "AI_timebase_terminal",
+                "AI_timebase_rate",
                 "AO_range",
                 "max_AI_multi_chan_rate",
                 "max_AI_single_chan_rate",
@@ -81,7 +84,7 @@ class NI_DAQmx(IntermediateDevice):
                 "wait_monitor_minimum_pulse_width",
                 "wait_monitor_supports_wait_completed_events",
             ],
-            "device_properties": ["acquisition_rate", "start_delay_ticks"],
+            "device_properties": ["acquisition_rate","start_delay_ticks"],
         }
     )
     def __init__(
@@ -93,6 +96,7 @@ class NI_DAQmx(IntermediateDevice):
         static_AO=None,
         static_DO=None,
         clock_mirror_terminal=None,
+        connected_terminals=None,
         acquisition_rate=None,
         AI_range=None,
         AI_range_Diff=None,
@@ -100,6 +104,8 @@ class NI_DAQmx(IntermediateDevice):
         AI_start_delay_ticks=None,
         AI_term='RSE',
         AI_term_cfg=None,
+        AI_timebase_terminal=None,
+        AI_timebase_rate=None,
         AO_range=None,
         max_AI_multi_chan_rate=None,
         max_AI_single_chan_rate=None,
@@ -132,6 +138,9 @@ class NI_DAQmx(IntermediateDevice):
             clock_mirror_terminal (str, optional): Channel string of digital output
                 that mirrors the input clock. Useful for daisy-chaning DAQs on the same
                 clockline.
+            connected_terminals (list, optional): List of pairs of strings of digital inputs
+                and digital outputs that will be connected. Useful for daisy-chaining DAQs
+                on the same clockline when they do not have direct routes (see Device Routes in NI MAX).
             acquisiton_rate (float, optional): Default sample rate of inputs.
             AI_range (iterable, optional): A `[Vmin, Vmax]` pair that sets the analog
                 input voltage range for all analog inputs.
@@ -149,9 +158,15 @@ class NI_DAQmx(IntermediateDevice):
             AI_term_cfg (dict, optional): Dictionary of analog input channels and their
                 supported terminations. Best to use `get_capabilities.py` to introspect
                 these.
+            AI_timebase_terminal (str, optional): Channel string that specifies what
+                channel to use for the Sample Clock Timebase signal.
+                If None, use default internal clocks.
+                Must also specify the rate when not using the internal sources.
+            AI_timebase_rate (float, optional): Supplied clock frequency for the AI timebase.
+                Only specify if using an external clock source.
             AO_range (iterable, optional): A `[Vmin, Vmax]` pair that sets the analog
                 output voltage range for all analog outputs.
-            max_AI_multi_chan_rate (float, optional): Max supported analog input
+            max_AI_multi_chan_rate (float, optional): Max supported analog input 
                 sampling rate when using multiple channels.
             max_AI_single_chan_rate (float, optional): Max supported analog input
                 sampling rate when only using a single channel.
@@ -226,10 +241,10 @@ class NI_DAQmx(IntermediateDevice):
                     scripts or define the `AI_Term_Cfg` kwarg for your device.
                     """
                 warnings.warn(dedent(msg.format(self.description)), FutureWarning)
-            self.AI_chans = [key for key, val in AI_term_cfg.items() if self.AI_term in val]
+            self.AI_chans = [key for key,val in AI_term_cfg.items() if self.AI_term in val]
             if not len(self.AI_chans):
                 msg = """AI termination {0} not supported for {1}."""
-                raise LabscriptError(dedent(msg.format(AI_term, self.description)))
+                raise LabscriptError(dedent(msg.format(AI_term,self.description)))
             if AI_term == 'Diff':
                 self.AI_range = AI_range_Diff
             if AI_start_delay is None:
@@ -245,6 +260,13 @@ class NI_DAQmx(IntermediateDevice):
             # no analog inputs
             self.AI_chans = []
             self.start_delay_ticks = None
+        # special AI timebase handling
+        if num_AI > 0:
+            if (AI_timebase_rate is None) ^ (AI_timebase_terminal is None):
+                raise LabscriptError("You must specify terminal and rate when using an external AI timebase")
+            self.AI_timebase_terminal = AI_timebase_terminal
+            self.AI_timebease_rate = AI_timebase_rate
+                
         self.num_AO = num_AO
         self.num_CI = num_CI
         self.ports = ports if ports is not None else {}
@@ -431,53 +453,33 @@ class NI_DAQmx(IntermediateDevice):
         """Collect digital output data and create the output array"""
         if not digitals:
             return None
-        # n_timepoints = 1 if self.static_DO else len(times)
-        # # List of output bits by port number:
-        # bits_by_port = {}
-        # # table names and dtypes by port number:
-        # columns = {}
-
-        num_DO = 0
-        port_offset = {}
-        for port_name in self.ports:
-            port = self.ports[port_name]
-            if port['supports_buffered']:
-                port_offset[port_name] = num_DO
-                num_DO += port['num_lines']
-        outputarray = [0] * num_DO
-
+        n_timepoints = 1 if self.static_DO else len(times)
+        # List of output bits by port number:
+        bits_by_port = {}
+        # table names and dtypes by port number:
+        columns = {}
         for connection, output in digitals.items():
             port, line = split_conn_DO(connection)
             port_str = 'port%d' % port
-
-            outputarray[port_offset[port_str] + line] = output.raw_output
-
-            # if port not in bits_by_port:
-            #     # Make a list of the right size for the number of lines
-            #     # on the port, or the number of bits in the smallest integer
-            #     # type that is equal to or larger than the number of lines.
-            #     nlines = self.ports[port_str]["num_lines"]
-            #     int_type = _smallest_int_type(nlines)
-            #     int_type_nbits = 8 * int_type().nbytes
-            #     columns[port] = (port_str, int_type)
-            #     bits_by_port[port] = [0] * int_type_nbits
-            # bits_by_port[port][line] = output.raw_output
-
-        if num_DO in _ints.keys():
-            bits = bitfield(outputarray, dtype=_ints[num_DO])
-        else:
-            bits = bitfield(outputarray, dtype=np.uint32)
-        return bits
-
-        # dtypes = [columns[port] for port in sorted(columns)]
-        # digital_out_table = np.empty(n_timepoints, dtype=dtypes)
-        # for port, bits in bits_by_port.items():
-        #     # Pack the bits from each port into an integer:
-        #     port_str, dtype = columns[port]
-        #     values = bitfield(bits, dtype=dtype)
-        #     # Put them into the table:
-        #     digital_out_table[port_str] = np.array(values)
-        # return digital_out_table
+            if port not in bits_by_port:
+                # Make a list of the right size for the number of lines
+                # on the port, or the number of bits in the smallest integer
+                # type that is equal to or larger than the number of lines.
+                nlines = self.ports[port_str]["num_lines"]
+                int_type = _smallest_int_type(nlines)
+                int_type_nbits = 8 * int_type().nbytes
+                columns[port] = (port_str, int_type)
+                bits_by_port[port] = [0] * int_type_nbits
+            bits_by_port[port][line] = output.raw_output
+        dtypes = [columns[port] for port in sorted(columns)]
+        digital_out_table = np.empty(n_timepoints, dtype=dtypes)
+        for port, bits in bits_by_port.items():
+            # Pack the bits from each port into an integer:
+            port_str, dtype = columns[port]
+            values = bitfield(bits, dtype=dtype)
+            # Put them into the table:
+            digital_out_table[port_str] = np.array(values)
+        return digital_out_table
 
     def _make_analog_input_table(self, inputs):
         """Collect analog input instructions and create the acquisition table"""
@@ -613,29 +615,12 @@ class NI_DAQmx(IntermediateDevice):
         self._check_wait_monitor_timeout_device_config()
 
         grp = self.init_device_group(hdf5_file)
-
-        grp.create_dataset('TIMES', data=times, compression=config.compression)
-
         if AO_table is not None:
             grp.create_dataset('AO', data=AO_table, compression=config.compression)
         if DO_table is not None:
             grp.create_dataset('DO', data=DO_table, compression=config.compression)
         if AI_table is not None:
             grp.create_dataset('AI', data=AI_table, compression=config.compression)
-
-        if DO_table is not None:  # Table must be non empty
-            # construct a single string that has each port and line distribution separated by commas
-            # this should coincide with the convention used by the create/write functions in the DAQmx library
-            ports_str = ""
-            for port_name in self.ports:
-                port = self.ports[port_name]
-                if port['supports_buffered']:
-                    ports_str = f'{ports_str}{self.MAX_name}/{port_name}/line0:{port["num_lines"]-1},'
-            if ports_str != "":
-                ports_str = ports_str[:-1]  # delete final comma in string
-            self.set_property('digital_lines', (ports_str), location='device_properties')
-        else:
-            self.set_property('digital_lines', (''), location='device_properties')
 
 
 from .models import *

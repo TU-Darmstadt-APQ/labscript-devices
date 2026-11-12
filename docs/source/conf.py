@@ -12,8 +12,6 @@
 #
 import os
 from pathlib import Path
-from m2r import MdInclude
-from recommonmark.transform import AutoStructify
 from jinja2 import FileSystemLoader, Environment
 
 # -- Project information (unique to each project) -------------------------------------
@@ -46,15 +44,16 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
     "sphinx_rtd_theme",
-    "recommonmark",
+    "myst_parser",
 ]
 
 autodoc_typehints = 'description'
 autoclass_content = 'both'  # options: 'both', 'class', 'init'
-autodoc_mock_imports = ['PyDAQmx']
+autodoc_mock_imports = ['PyDAQmx','labscript_utils']
 
 # Prefix each autosectionlabel with the name of the document it is in and a colon
 autosectionlabel_prefix_document = True
+myst_heading_anchors = 2
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -75,15 +74,15 @@ master_doc = 'index'
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3/', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
-    'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/', None),
     'pandas': ('https://pandas.pydata.org/pandas-docs/stable/', None),
     'qtutils': ('https://qtutils.readthedocs.io/en/stable/', None),
     'pyqtgraph': (
         'https://pyqtgraph.readthedocs.io/en/latest/',
         None,
     ),  # change to stable once v0.11 is published
-    'matplotlib': ('https://matplotlib.org/', None),
-    'h5py': ('http://docs.h5py.org/en/stable/', None),
+    'matplotlib': ('https://matplotlib.org/stable/', None),
+    'h5py': ('https://docs.h5py.org/en/stable/', None),
     'pydaqmx': ('https://pythonhosted.org/PyDAQmx/', None),
     'qt': (
         '',
@@ -203,20 +202,7 @@ html_theme_options = {'navigation_depth': 3}
 # Use m2r only for mdinclude and recommonmark for everything else
 # https://github.com/readthedocs/recommonmark/issues/191#issuecomment-622369992
 def setup(app):
-    config = {
-        # 'url_resolver': lambda url: github_doc_root + url,
-        'auto_toc_tree_section': 'Contents',
-        'enable_eval_rst': True,
-    }
-    app.add_config_value('recommonmark_config', config, True)
-    app.add_transform(AutoStructify)
 
-    # from m2r to make `mdinclude` work
-    app.add_config_value('no_underscore_emphasis', False, 'env')
-    app.add_config_value('m2r_parse_relative_links', False, 'env')
-    app.add_config_value('m2r_anonymous_references', False, 'env')
-    app.add_config_value('m2r_disable_inline_math', False, 'env')
-    app.add_directive('mdinclude', MdInclude)
     app.add_css_file('custom.css')
 
     # generate the components.rst file dynamically so it points to stable/latest

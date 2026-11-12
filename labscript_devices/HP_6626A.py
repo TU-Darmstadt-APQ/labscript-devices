@@ -18,10 +18,10 @@ from PyQt5.QtCore import Qt
 # from qtutils.qt.QtGui import QDoubleValidator
 
 # --- Worker Imports
-from labscript_devices.GPIBDevice import GPIBWorker
+from labscript_devices.GPIBDevice import GPIBWorker,EosStrategy
 
 # --- Others
-# from .logger_config import logger
+from .logger_config import logger
 
 
 
@@ -34,10 +34,11 @@ from labscript_devices.GPIBDevice import GPIBWorker
 ##############################################################################################################
 
 # Specifications for HP6626A:
-max_no_of_outputs = 4
-Watt_ratings = [25, 25, 50, 50]
-voltage_decimals = 2
-current_decimals = 3
+max_no_of_outputs : int = 4
+Watt_ratings : list[int] = [25, 25, 50, 50]
+voltage_decimals :int = 2
+current_decimals :int = 3
+eos_strategy : EosStrategy = EosStrategy.LF
 
 # DC Output Range Specifications
 LOW_RANGE :bool = False
@@ -95,18 +96,15 @@ class HP_6626A(IntermediateDevice):
     '''
 
     allowed_children = [StaticAnalogQuantity]
-
     description = 'HP 6626A DC Power Supply'
 
-    @set_passed_properties(property_names={"connection_table_properties": ["num_outputs"]})
-    def __init__(self, name, GPIB_address, num_outputs=None, **kwargs):
-        # Following Phil's thesis, IntermediateDevice should be subclassed here:
+    @set_passed_properties(property_names={"connection_table_properties": ["num_outputs","eos_strategy"]})
+    def __init__(self, name, GPIB_address, num_outputs=None, eos_strategy = eos_strategy.value, **kwargs):
         IntermediateDevice.__init__(self, name, None, **kwargs)
-
         self.instructions = {}
-
         self.BLACS_connection = GPIB_address
-        if isinstance(num_outputs, int):
+        self.eos_strategy = eos_strategy
+        if isinstance(num_outputs, int):        # Check the number of outputs
             if num_outputs <= max_no_of_outputs:
                 self.num_outputs = num_outputs
             else:
@@ -153,11 +151,8 @@ class HP_6626A(IntermediateDevice):
             if output_table['c%d' % i] < MIN_CURRENT_50W_HIGH_RANGE or output_table['c%d' % i] > MAX_CURRENT_50W_HIGH_RANGE:
                 raise LabscriptError("The voltage specified for {:s} is not within the power supply's voltage range".format(device.connection))
 
-        # print('output_table',output_table)
-
         # Create device group in the HDF5 file:
         grp = self.init_device_group(hdf5_file)
-
         # Save Output to HDF5File:
         grp.create_dataset('OUTPUT_DATA', compression=config.compression, data=output_table)
 
@@ -229,7 +224,7 @@ class HP_6626ATab(DeviceTab):
             widget_layout = widget.layout()     # which is a GridLayout Btw
             readback_widget = QLabel(f"Readback: {int_val}")
             self.readback_widgets[key] = readback_widget
-            widget_layout.addWidget(readback_widget,2,0)   # row # column
+            widget_layout.addWidget(readback_widget,2,0,alignment=Qt.AlignmentFlag.AlignTop)   # row # column
 
         self.auto_place_widgets(ao_widgets)
 
@@ -241,7 +236,7 @@ class HP_6626ATab(DeviceTab):
         for i in range(1,self.num_outputs +1):
             self.status_label = QLabel(f"Mode channel {i} : Unknown")
             self.status_labels_dict[i] = self.status_label
-            layout.addWidget(self.status_label)
+            layout.addWidget(self.status_label,alignment=Qt.AlignmentFlag.AlignTop)
 
 
 
@@ -252,7 +247,7 @@ class HP_6626ATab(DeviceTab):
     def program_device(self):
         DeviceTab.program_device(self)    # to don't disturb the basic functionalities
         current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
-        # logger.info(current_output_values)
+        logger.info(current_output_values)
         for key, value in current_output_values.items():
             self.readback_widgets[key].setText(f"Readback: {value}")
 
@@ -365,6 +360,7 @@ class HP_6626AWorker(GPIBWorker):
         return ' '.join(status)
 
     def get_readbacks(self):
+        time.sleep(0.06)  # allow adapter to flush writes (50ms should be enough)
         current_output_values = {}
         for i in range(1, self.num_outputs + 1 ):
             current_output_values[f'out{i}/voltage'] = np.round(float(self.get_v( i)) , voltage_decimals)
@@ -437,3 +433,36 @@ class HP_6626AWorker(GPIBWorker):
 @runviewer_parser
 class HP_6626AParser(object):
     pass
+# class RunviewerClass(object):
+
+    # def __init__(self, path, device):
+    #     self.path = path
+    #     self.name = device.name
+    #     self.device = device
+
+    # def get_traces(self, add_trace, clock=None):
+    #     # the clock argument is used as stop time, because this device is not connected to any Masterclock
+    #     if not (isinstance(clock, float) or isinstance(clock, int)):  # shoud never happen
+    #         raise Exception("No stop time is passed to RS SignalGenerator")
+    #     else:
+    #         stop_time = clock
+
+    #     # get the shot data
+    #     with h5py.File(self.path, 'r') as f:
+    #         if 'FREQUENCY_OUTPUT' in f['devices/%s' % self.name]:
+    #             data = f['devices/%s/FREQUENCY_OUTPUT' % self.name][:]
+    #             frequency = data[0][0]
+    #         else:
+    #             frequency = None
+
+    #     traces = {}
+    #     traces['frequency'] = ((0, stop_time), (frequency, frequency))  # add start- and end point to the trace
+
+    #     triggers = {}
+    #     for channel_name, channel in self.device.child_list.items():
+    #         if channel.parent_port in traces:
+    #             if channel.device_class == 'Trigger':
+    #                 triggers[channel_name] = traces[channel.parent_port]
+    #             add_trace(channel_name, traces[channel.parent_port], self.name, channel.parent_port)
+
+    #     return triggers
