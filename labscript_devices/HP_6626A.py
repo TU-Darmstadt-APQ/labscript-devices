@@ -5,6 +5,7 @@ from labscript_utils.shared_drive import path_to_local
 from labscript import config, IntermediateDevice, StaticAnalogQuantity, LabscriptError, set_passed_properties
 import numpy as np
 import h5py
+import time
 
 # --- Blacs Imports 
 from blacs.tab_base_classes import define_state
@@ -18,10 +19,12 @@ from PyQt5.QtCore import Qt
 # from qtutils.qt.QtGui import QDoubleValidator
 
 # --- Worker Imports
-from labscript_devices.GPIBDevice import GPIBWorker,EosStrategy
+# from labscript_devices.GPIBDevice import GPIBWorker, EosStrategy
+from user_devices.GPIB_Adapter.utils_gpib_adapter import EosStrategy
+from user_devices.GPIB_Adapter.gpib_worker import GPIBWorker
 
 # --- Others
-from .logger_config import logger
+# from .logger_config import logger
 
 
 
@@ -34,10 +37,10 @@ from .logger_config import logger
 ##############################################################################################################
 
 # Specifications for HP6626A:
-max_no_of_outputs : int = 4
-Watt_ratings : list[int] = [25, 25, 50, 50]
-voltage_decimals :int = 2
-current_decimals :int = 3
+max_no_of_outputs = 4
+Watt_ratings = [25, 25, 50, 50]
+voltage_decimals = 2
+current_decimals = 5
 eos_strategy : EosStrategy = EosStrategy.LF
 
 # DC Output Range Specifications
@@ -96,15 +99,17 @@ class HP_6626A(IntermediateDevice):
     '''
 
     allowed_children = [StaticAnalogQuantity]
+
     description = 'HP 6626A DC Power Supply'
 
     @set_passed_properties(property_names={"connection_table_properties": ["num_outputs","eos_strategy"]})
-    def __init__(self, name, GPIB_address, num_outputs=None, eos_strategy = eos_strategy.value, **kwargs):
+    def __init__(self, name, GPIB_address, num_outputs=None,eos_strategy = eos_strategy.value, **kwargs):
+        # Following Phil's thesis, IntermediateDevice should be subclassed here:
         IntermediateDevice.__init__(self, name, None, **kwargs)
         self.instructions = {}
         self.BLACS_connection = GPIB_address
         self.eos_strategy = eos_strategy
-        if isinstance(num_outputs, int):        # Check the number of outputs
+        if isinstance(num_outputs, int):
             if num_outputs <= max_no_of_outputs:
                 self.num_outputs = num_outputs
             else:
@@ -153,6 +158,7 @@ class HP_6626A(IntermediateDevice):
 
         # Create device group in the HDF5 file:
         grp = self.init_device_group(hdf5_file)
+
         # Save Output to HDF5File:
         grp.create_dataset('OUTPUT_DATA', compression=config.compression, data=output_table)
 
@@ -218,13 +224,13 @@ class HP_6626ATab(DeviceTab):
         _, ao_widgets, _ = self.auto_create_widgets()
 
         # --- Readback widgets
-        int_val = 0
+
         self.readback_widgets = {}
         for key,widget in ao_widgets.items():
             widget_layout = widget.layout()     # which is a GridLayout Btw
-            readback_widget = QLabel(f"Readback: {int_val}")
+            readback_widget = QLabel(f"Readback: --")
             self.readback_widgets[key] = readback_widget
-            widget_layout.addWidget(readback_widget,2,0,alignment=Qt.AlignmentFlag.AlignTop)   # row # column
+            widget_layout.addWidget(readback_widget,2,0,1,2)   # row # column
 
         self.auto_place_widgets(ao_widgets)
 
@@ -236,7 +242,7 @@ class HP_6626ATab(DeviceTab):
         for i in range(1,self.num_outputs +1):
             self.status_label = QLabel(f"Mode channel {i} : Unknown")
             self.status_labels_dict[i] = self.status_label
-            layout.addWidget(self.status_label,alignment=Qt.AlignmentFlag.AlignTop)
+            layout.addWidget(self.status_label)
 
 
 
@@ -247,12 +253,27 @@ class HP_6626ATab(DeviceTab):
     def program_device(self):
         DeviceTab.program_device(self)    # to don't disturb the basic functionalities
         current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
-        logger.info(current_output_values)
+        if current_output_values is None:
+            self.logger.warning("Readback failed; see the BLACS worker traceback")
+            for widget in self.readback_widgets.values():
+                widget.setText("Readback: unavailable")
+            return
+        # # logger.info(current_output_values)
         for key, value in current_output_values.items():
-            self.readback_widgets[key].setText(f"Readback: {value}")
+           self.readback_widgets[key].setText(f"Readback: {value}")
 
     @define_state(MODE_MANUAL, True)
     def status_monitor(self):
+        # get readback values (V,A)
+        current_output_values = yield(self.queue_work(self.primary_worker,'get_readbacks'))
+        if current_output_values is None:
+            self.logger.warning("Readback failed; see the BLACS worker traceback")
+            for widget in self.readback_widgets.values():
+                widget.setText("Readback: unavailable")
+            return
+        for key, value in current_output_values.items():
+            self.readback_widgets[key].setText(f"Readback: {value}")
+        # check status
         for chan in range(1,self.num_outputs +1):
             status_label = self.status_labels_dict[chan] 
             mode = yield (self.queue_work(self.primary_worker, "check_status",chan))
@@ -286,7 +307,7 @@ class HP_6626AWorker(GPIBWorker):
     def set_v(self,chan,voltage):
         try:
             sendStr = f"VSET {chan},{voltage}"
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError("Failed setting voltage : ",e)
 
@@ -294,14 +315,14 @@ class HP_6626AWorker(GPIBWorker):
         # Accuracy of the readback value over an interface is the same as the analog-to-digital converter
         try:
             sendStr = f"VOUT? {chan}" 
-            return self.GPIB_connection.query(sendStr)
+            return self.query_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError("Failed getting voltage : ",e)
         
     def set_i(self, chan, current):
         try:
             sendStr = f"ISET {chan},{current}"
-            self.GPIB_connection.write(sendStr)
+            self.write_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError(f"Failed setting current: {e}")
 
@@ -309,17 +330,23 @@ class HP_6626AWorker(GPIBWorker):
         # Accuracy of the readback value over an interface is the same as the analog-to-digital converter
         try:
             sendStr = f"IOUT? {chan}"
-            return self.GPIB_connection.query(sendStr)
+            return self.query_with_reconnect(sendStr)
         except Exception as e:
             raise LabscriptError(f"Failed getting current: {e}")
         
+
     def get_mode(self,chan):
         try:
-            sendStr = f"STS? {chan}"
-            result = self.GPIB_connection.query(sendStr)
-            return int(result)
+            sendStr = f"STS? {int(chan)}"
+            result = self.query_with_reconnect(sendStr)
+            
+            try:
+                return int(result)
+            except (ValueError, TypeError):
+                return None
         except Exception as e:
             raise LabscriptError(f"Failed getting mode: {e}")
+
         
     # -------------------------- Worker/Instrument methodes
     def send_GPIB_voltage(self, voltage=None, output=None):
@@ -348,7 +375,14 @@ class HP_6626AWorker(GPIBWorker):
 
     # -------------------------- Worker/Tab methodes
     def check_status(self,chan):
-        mode = self.get_mode(chan)
+        try:
+            mode = self.get_mode(chan)
+        except LabscriptError:
+            self.logger.exception("Failed reading status for output %s", chan)
+            return 'Unknown'
+        if mode is None:
+            self.logger.warning("Invalid status response for output %s", chan)
+            return 'Unknown'
         
         meanings = ['CV', '+CC', '-CC', 'OV', 'OT', 'UNR', 'OC', 'CP']  # Page 74 OPERATING MANUAL 6622A
         status = []
@@ -359,12 +393,33 @@ class HP_6626AWorker(GPIBWorker):
                 status.append(meanings[i])
         return ' '.join(status)
 
+
+    def _check_output(self, val, round_dec):
+        try: 
+            res = float(val)
+            res = np.round(res , round_dec)
+            return res
+        except (ValueError, TypeError):
+            return np.nan
+
+
     def get_readbacks(self):
-        time.sleep(0.06)  # allow adapter to flush writes (50ms should be enough)
+        time.sleep(0.025)
         current_output_values = {}
         for i in range(1, self.num_outputs + 1 ):
-            current_output_values[f'out{i}/voltage'] = np.round(float(self.get_v( i)) , voltage_decimals)
-            current_output_values[f'out{i}/current'] = np.round(float(self.get_i( i)), current_decimals)
+            for quantity, getter, decimals in (
+                ('voltage', self.get_v, voltage_decimals),
+                ('current', self.get_i, current_decimals),
+            ):
+                key = f'out{i}/{quantity}'
+                try:
+                    value = getter(i)
+                except LabscriptError:
+                    self.logger.exception("Failed reading %s", key)
+                    current_output_values[key] = np.nan
+                else:
+                    current_output_values[key] = self._check_output(value, decimals)
+
         return current_output_values
 
     # -------------------------- The usuals
@@ -402,8 +457,10 @@ class HP_6626AWorker(GPIBWorker):
         # Send Values via GPIB:
         final_values = {}
         for i in range(self.num_outputs):
+            time.sleep(0.01)
             self.send_GPIB_voltage(voltage=output_table['v%d' % (i + 1)], output=i + 1)
             final_values['out' + str(i + 1) + '/voltage'] = output_table['v%d' % (i + 1)]
+            time.sleep(0.01)
             self.send_GPIB_current(current=output_table['c%d' % (i + 1)], output=i + 1)
             final_values['out' + str(i + 1) + '/current'] = output_table['c%d' % (i + 1)]
         # Return final values to use them when transitioning to manual:
@@ -422,10 +479,13 @@ class HP_6626AWorker(GPIBWorker):
             current_table[i] = values['out' + str(i + 1) + '/current']
 
         for i in range(len(voltage_table)):
+            time.sleep(0.01)
             self.send_GPIB_voltage(voltage=voltage_table[i], output=i + 1)
         for i in range(len(current_table)):
+            time.sleep(0.01)
             self.send_GPIB_current(current=current_table[i], output=i + 1)
 
+        time.sleep(0.01)
         # return True to indicate we successfully transitioned back to manual mode
         return True
 
@@ -433,36 +493,3 @@ class HP_6626AWorker(GPIBWorker):
 @runviewer_parser
 class HP_6626AParser(object):
     pass
-# class RunviewerClass(object):
-
-    # def __init__(self, path, device):
-    #     self.path = path
-    #     self.name = device.name
-    #     self.device = device
-
-    # def get_traces(self, add_trace, clock=None):
-    #     # the clock argument is used as stop time, because this device is not connected to any Masterclock
-    #     if not (isinstance(clock, float) or isinstance(clock, int)):  # shoud never happen
-    #         raise Exception("No stop time is passed to RS SignalGenerator")
-    #     else:
-    #         stop_time = clock
-
-    #     # get the shot data
-    #     with h5py.File(self.path, 'r') as f:
-    #         if 'FREQUENCY_OUTPUT' in f['devices/%s' % self.name]:
-    #             data = f['devices/%s/FREQUENCY_OUTPUT' % self.name][:]
-    #             frequency = data[0][0]
-    #         else:
-    #             frequency = None
-
-    #     traces = {}
-    #     traces['frequency'] = ((0, stop_time), (frequency, frequency))  # add start- and end point to the trace
-
-    #     triggers = {}
-    #     for channel_name, channel in self.device.child_list.items():
-    #         if channel.parent_port in traces:
-    #             if channel.device_class == 'Trigger':
-    #                 triggers[channel_name] = traces[channel.parent_port]
-    #             add_trace(channel_name, traces[channel.parent_port], self.name, channel.parent_port)
-
-    #     return triggers
