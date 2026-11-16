@@ -1,5 +1,6 @@
 # -------------------------------- Imports
 # --- Intermediate Device Imports 
+from labscript_devices import runviewer_parser, BLACS_tab
 from labscript_utils.shared_drive import path_to_local
 from labscript import config, IntermediateDevice, StaticAnalogQuantity, LabscriptError, set_passed_properties
 import numpy as np

@@ -8,6 +8,9 @@ import h5py
 import time
 import tqdm
 
+from user_devices.GPIB_Adapter.utils_gpib_adapter import EosStrategy
+from user_devices.GPIB_Adapter.gpib_worker import GPIBWorker
+
 
 ENABLE_RANGE = False
 
@@ -153,10 +156,13 @@ class E4421_SignalGeneratorTab(DeviceTab):
 
         connection_table_entry = self.settings['connection_table'].find_by_name(self.settings['device_name'])
         self.GPIB_address = connection_table_entry.BLACS_connection
-        if self.GPIB_address[0] != 'G':
-            self.IP_address = self.GPIB_address
-        else:
+        
+        
+        if self.GPIB_address.startswith(("GPIB", "ADAP", "TCPIP")):
             self.IP_address = None
+        else:
+            self.IP_address = self.GPIB_address
+            #self.IP_address = None
 
 
         if self.auto_ramping:  # if ramping is enabled, start the 'timer' for auto-ramping
@@ -256,7 +262,7 @@ class E4421_SignalGeneratorTab(DeviceTab):
         self.primary_worker = "main_worker"
 
 
-from labscript_devices.GPIBDevice import GPIBWorker
+#from labscript_devices.GPIBDevice import GPIBWorker
 
 
 class E4421_SignalGeneratorWorker(GPIBWorker):
