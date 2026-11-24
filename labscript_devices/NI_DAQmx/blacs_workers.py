@@ -41,6 +41,10 @@ from labscript_utils.labconfig import LabConfig
 import zmq 
 from labscript_utils.labconfig import LabConfig
 
+#import warnings 
+
+#warnings.simplefilter("error")
+
 
 class NI_DAQmxOutputWorker(Worker):
     def init(self):

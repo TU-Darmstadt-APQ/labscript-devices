@@ -253,7 +253,11 @@ class List_FPGA_instructions_helper:
         The created pickle-file only uses python build in types and therefore this file
         can be opened into any python environment.
         """
-        _PATH = "Z:\\QUIPS-B\\debug_FPGA\\list_of_things.pckl"
+
+        #Changed Path for new experiment PC
+        #_PATH = "Z:\\QUIPS-B\\debug_FPGA\\list_of_things.pckl"
+        _PATH = "Q:\\_Messungen\\QUIPS-B\\debug_FPGA\\list_of_things.pckl"
+
         with open(_PATH, "wb") as pckl_file:
             pickle.dump(self.list_of_things, pckl_file)
         print(f"wrote self.list_of_things to {_PATH}")
@@ -264,7 +268,11 @@ class List_FPGA_instructions_helper:
         The created pickle-file only uses python build in types and therefore this file
         can be opened into any python environment.
         """
-        _PATH = "Z:\\QUIPS-B\\debug_FPGA\\list_of_things_sorted.pckl"
+
+        #Changed Path for new experiment PC
+        #_PATH = "Z:\\QUIPS-B\\debug_FPGA\\list_of_things_sorted.pckl"
+        _PATH = "Q:\\_Messungen\\QUIPS-B\\debug_FPGA\\list_of_things_sorted.pckl"
+        
         with open(_PATH, "wb") as pckl_file:
             pickle.dump(sorted_list, pckl_file)
         print(f"wrote self.list_of_things to {_PATH}")
@@ -275,7 +283,11 @@ class List_FPGA_instructions_helper:
         The created pickle-file only uses python build in types and therefore this file
         can be opened into any python environment.
         """
-        _PATH = "Z:\\QUIPS-B\\debug_FPGA\\instructions.pckl"
+
+        #Changed Path for new experiment PC
+        #_PATH = "Z:\\QUIPS-B\\debug_FPGA\\instructions.pckl"
+        _PATH = "Q:\\_Messungen\\QUIPS-B\\debug_FPGA\\instructions.pckl"
+        
         with open(_PATH, "wb") as pckl_file:
             pickle.dump(list_FPGA_obj.instructions, pckl_file)
         print(f"wrote self.list_of_things to {_PATH}")

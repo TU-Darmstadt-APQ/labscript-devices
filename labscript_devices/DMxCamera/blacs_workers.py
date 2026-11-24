@@ -38,6 +38,7 @@ import time
 from labscript_devices.IMAQdxCamera.blacs_workers import IMAQdxCameraWorker
 from labscript_utils.shared_drive import path_to_local
 
+
 # Don't import API yet so as not to throw an error, allow worker to run as a dummy
 # device, or for subclasses to import this module to inherit classes without requiring API
 IC = None
